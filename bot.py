@@ -8,6 +8,8 @@ from telegram.constants import ParseMode
 from config import BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID, SURVEY_QUESTIONS
 from database import db, UserState, UserData
 import telegram
+import pytz
+from datetime import datetime
 
 # Enable logging
 logging.basicConfig(
@@ -123,6 +125,14 @@ async def handle_survey_response(update: Update,
     user_data = db.get_user(user_id)
 
     if not user_data or user_data.state != UserState.IN_SURVEY:
+        return
+
+    # Check if the message is text
+    if not update.message.text:
+        await update.message.reply_text(
+            "Please send your answer as text only. Images, audio, or other media are not accepted.\n\n"
+            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}"
+        )
         return
 
     # Save the answer
@@ -367,12 +377,15 @@ async def export_data(update: Update,
             "This command can only be used in the admin group.")
         return
 
+    # Set timezone to Singapore (GMT+8)
+    sg_tz = pytz.timezone('Asia/Singapore')
+
     # Create CSV in memory
     output = StringIO()
     csv_writer = csv.writer(output)
 
     # Write header
-    headers = ['User ID', 'Username', 'State', 'Join Date (UTC)']
+    headers = ['User ID', 'Username', 'State', 'Join Date (GMT+8)']
     headers.extend(SURVEY_QUESTIONS)  # Add each survey question as a column
     csv_writer.writerow(headers)
 
@@ -381,12 +394,15 @@ async def export_data(update: Update,
 
     # Write data rows
     for user in all_users:
+        # Convert UTC time to Singapore time
+        sg_time = user.join_datetime.replace(tzinfo=pytz.UTC).astimezone(sg_tz)
+
         row = [
             user.user_id,
             user.username or 'None',
             user.state.value,
-            user.join_datetime.strftime(
-                '%Y-%m-%d %H:%M:%S UTC')  # Format datetime
+            sg_time.strftime('%Y-%m-%d %H:%M:%S GMT+8'
+                             )  # Format datetime in Singapore timezone
         ]
         # Add answers in the same order as questions
         for question in SURVEY_QUESTIONS:
@@ -394,11 +410,15 @@ async def export_data(update: Update,
 
         csv_writer.writerow(row)
 
+    # Get current time in Singapore timezone for filename
+    current_sg_time = datetime.now(sg_tz)
+    filename = f'sisc_user_data_{current_sg_time.strftime("%Y%m%d_%H%M%S")}.csv'
+
     # Prepare the CSV file for sending
     output.seek(0)
     await context.bot.send_document(chat_id=update.effective_chat.id,
                                     document=output.getvalue().encode(),
-                                    filename='user_data.csv',
+                                    filename=filename,
                                     caption='Here is the exported user data.')
     output.close()
 
@@ -562,9 +582,8 @@ def main() -> None:
 
     # Handler for survey responses - must be last to not interfere with other handlers
     application.add_handler(
-        MessageHandler(
-            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
-            handle_survey_response))
+        MessageHandler(filters.ChatType.PRIVATE & ~filters.COMMAND,
+                       handle_survey_response))
 
     # Start the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)

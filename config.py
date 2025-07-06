@@ -28,7 +28,8 @@ except ValueError:
 
 # Survey questions
 SURVEY_QUESTIONS = [
-    "What's your name?", "What's your age?",
-    "Why do you want to join this group?", "How did you hear about us?",
-    "What do you hope to contribute to the community?"
+    "What's your name?", "Which company are you currently with?",
+    "What is your current role or job title?",
+    "Please share your LinkedIn profile.",
+    "What's one AI tool you use regularly, and why do you find it valuable?"
 ]
