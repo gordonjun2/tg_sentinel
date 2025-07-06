@@ -116,10 +116,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db.update_user(user_data)
 
     await update.message.reply_text(
-        "👋 Welcome to the *Super-Individual Secret Club*! "
+        "👋 Welcome to the *Super-Individual Secret Club*!\n"
         "🎯We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.\n\n"
-        "To keep this circle intentional, we ask a few quick questions before letting you in. "
-        "🧠 It won't take long — just helps us make sure the right people are in the room. "
+        "To keep this circle intentional, we ask a few quick questions before letting you in.\n"
+        "🧠 It won't take long — just helps us make sure the right people are in the room.\n"
         "👇 Let's begin:\n\n"
         f"Question 1: {SURVEY_QUESTIONS[0]}",
         parse_mode=ParseMode.MARKDOWN)
