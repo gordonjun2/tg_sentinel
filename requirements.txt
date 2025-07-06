@@ -2,4 +2,15 @@ python-telegram-bot==20.7
 python-dotenv==1.0.0
 pytz
 google-api-python-client>=2.86.0
-google-auth>=2.22.0 
+google-auth>=2.22.0
+huggingface_hub
+requests
+urllib3
+numpy
+whisperx
+openai-whisper
+google-genai
+markdown
+weasyprint
+langchain
+python-docx

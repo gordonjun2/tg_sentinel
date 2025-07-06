@@ -5,19 +5,27 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.ext import (Application, CommandHandler, MessageHandler,
                           CallbackQueryHandler, ContextTypes, filters)
 from telegram.constants import ParseMode
-from config import BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID, SURVEY_QUESTIONS, GOOGLE_DRIVE_FOLDER_ID
+from config import (BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID,
+                    SURVEY_QUESTIONS, GOOGLE_DRIVE_MAIN_FOLDER_ID,
+                    GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
+                    GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID)
 from database import db, UserState, UserData
 import telegram
 import pytz
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 from upload_to_google_drive import GoogleDriveUploader
+from audio_transcribe import AudioTranscriber
+import os
 
 # Enable logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize transcriber
+transcriber = AudioTranscriber()
 
 
 async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
@@ -477,7 +485,7 @@ async def help_command(update: Update,
 • Get your invite link (if approved)
 • Check your request status
 
-/help - Show this help message
+/help - Show this help message with command list
 
 *How to Join*
 1. Use /start to begin the process
@@ -485,25 +493,35 @@ async def help_command(update: Update,
 3. Wait for admin approval
 4. Once approved, you'll receive an invite link
 
-*Note*: Each invite link can only be used once and expires after use.
+Note: Each invite link can only be used once and expires after use.
 """
     elif update.effective_chat.id == ADMIN_GROUP_ID:
         help_text = """
-*Available Admin Commands*
+*Admin Commands*
 
+*User Management Commands:*
+/start - Start the join process (in private chat)
 /help - Show this help message
-/export - Export all user data to CSV file
-/stats - Show current statistics (total users, pending requests, etc.)
+/export - Export user data to CSV
+/stats - Show current statistics
 
-*Note*: These commands only work in this admin group.
+*Audio Processing Commands:*
+/transcribe\\_audio - Start audio transcription
+/check\\_transcription\\_status - Check transcription progress
 
-*User Management*
-Users can start the bot with /start in private chat to:
-• Complete the join survey
-• Get their invite link (if approved)
-• Check their request status
+*Audio Processing Features:*
+• Supports audio files, voice messages, and documents
+• Transcribes speech to text
+• Generates discussion insights
+• Uploads results to Google Drive
+• Shows progress and time elapsed
+• Automatic file cleanup after processing
 
-*Note*: Approval/rejection is done via buttons on join requests.
+*Important Notes:*
+• Only one transcription can run at a time
+• Results are uploaded to Google Drive
+• Admin commands work only in this group
+• User management via inline buttons
 """
     else:
         await update.message.reply_text(
@@ -555,7 +573,7 @@ async def upload_to_drive(bot, csv_path: str) -> None:
         uploader = GoogleDriveUploader()
 
         # Configure folder ID - you should set this in your config.py
-        folder_id = GOOGLE_DRIVE_FOLDER_ID
+        folder_id = GOOGLE_DRIVE_MAIN_FOLDER_ID
 
         # Run the upload in a thread pool to not block
         loop = asyncio.get_running_loop()
@@ -579,6 +597,305 @@ async def upload_to_drive(bot, csv_path: str) -> None:
             text=f"❌ Error uploading to Google Drive: {str(e)}")
 
 
+async def transcribe_audio_command(update: Update,
+                                   context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Start the audio transcription process by requesting an audio file."""
+    # Only allow in admin group
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        await update.message.reply_text(
+            "This command can only be used in the admin group.")
+        return
+
+    # Check if there's already an active transcription
+    active_transcription = db.get_active_transcription()
+    if active_transcription:
+        # Calculate time elapsed
+        elapsed_time = datetime.now(
+            timezone.utc) - active_transcription.start_time
+        elapsed_minutes = elapsed_time.total_seconds() / 60
+
+        await update.message.reply_text(
+            f"❌ Another transcription is already in progress:\n"
+            f"🎵 File: {os.path.basename(active_transcription.file_path)}\n"
+            f"⏱️ Time elapsed: {elapsed_minutes:.1f} minutes\n\n"
+            "Please wait for it to complete or check status with /check_transcription_status"
+        )
+        return
+
+    # Send message requesting audio file
+    message = await update.message.reply_text(
+        "Please reply to this message with the audio file you want to transcribe."
+    )
+
+    # Store the message ID in user_data for reference
+    context.user_data['transcribe_request_id'] = message.message_id
+
+
+async def check_transcription_status_command(
+        update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Check the status of any ongoing transcription."""
+    # Only allow in admin group
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        await update.message.reply_text(
+            "This command can only be used in the admin group.")
+        return
+
+    # Get active transcription
+    active_transcription = db.get_active_transcription()
+
+    if not active_transcription:
+        await update.message.reply_text(
+            "No audio is being transcribed or processed currently.")
+        return
+
+    # Calculate time elapsed
+    elapsed_time = datetime.now(timezone.utc) - active_transcription.start_time
+    elapsed_minutes = elapsed_time.total_seconds() / 60
+
+    # Format status message based on state
+    if active_transcription.is_fully_completed:
+        await update.message.reply_text(
+            "No audio is being transcribed or processed currently.")
+        return
+    elif not active_transcription.is_completed:
+        status_msg = (
+            f"🎵 Transcribing file: {os.path.basename(active_transcription.file_path)}\n"
+            f"Progress: {active_transcription.percentage:.1f}%\n"
+            f"Time elapsed: {elapsed_minutes:.1f} minutes")
+    elif active_transcription.is_extracting_insights:
+        status_msg = (
+            f"✅ Transcription completed for: {os.path.basename(active_transcription.file_path)}\n"
+            f"🔄 Now extracting discussion insights...\n"
+            f"Time elapsed: {elapsed_minutes:.1f} minutes")
+    else:
+        status_msg = (
+            f"✅ Transcription completed for: {os.path.basename(active_transcription.file_path)}\n"
+            f"⏳ Preparing to extract discussion insights...\n"
+            f"Time elapsed: {elapsed_minutes:.1f} minutes")
+
+    await update.message.reply_text(status_msg)
+
+
+async def process_transcription(bot, chat_id, file_path: str,
+                                base_filename: str, processing_msg) -> None:
+    """Process transcription in background."""
+    try:
+        # Start tracking transcription
+        db.start_transcription(file_path)
+
+        # Create a progress callback
+        def progress_callback(current: int, total: int):
+            percentage = (current / total) * 100
+            db.update_transcription_progress(file_path, percentage)
+
+        # Process the file with progress tracking - run in executor to not block
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: transcriber.transcribe(
+                file_path, progress_callback=progress_callback))
+
+        # Mark transcription as complete but keep tracking for insights
+        db.complete_transcription(file_path)
+
+        # Define transcription output path
+        transcription_file = f"./transcriptions/{base_filename}_transcription.txt"
+
+        try:
+            # Create uploader instance
+            uploader = GoogleDriveUploader()
+
+            # Upload to Google Drive using event loop
+            upload_result = await loop.run_in_executor(
+                None, lambda: uploader.upload_file(
+                    transcription_file, GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID))
+
+            if upload_result:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=
+                    f"✅ Transcription completed and uploaded to Google Drive!\nLink: {upload_result.get('webViewLink')}\n\n🔄 Now extracting discussion insights..."
+                )
+            else:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Failed to upload transcription to Google Drive")
+
+            # Start insight extraction
+            db.start_insight_extraction(file_path)
+
+            # Generate insights - run in executor
+            try:
+                await loop.run_in_executor(
+                    None, lambda: transcriber.extract_discussion_insight(
+                        transcription_file))
+
+                # Get the base filename from transcription file path
+                transcription_base = os.path.splitext(
+                    os.path.basename(transcription_file))[0]
+                if transcription_base.endswith('_transcription'):
+                    base_filename = transcription_base[:
+                                                       -14]  # remove '_transcription'
+
+                docx_path = f"./discussion_insights/{base_filename}_insights.docx"
+
+                # Upload file to Google Drive if it exists
+                upload_results = []
+                if os.path.exists(docx_path):
+                    try:
+                        result = await loop.run_in_executor(
+                            None, lambda: uploader.upload_file(
+                                docx_path,
+                                GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID))
+                        if result:
+                            upload_results.append((os.path.basename(docx_path),
+                                                   result.get('webViewLink')))
+                    except Exception as e:
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text=
+                            f"❌ Failed to upload {os.path.basename(docx_path)}: {str(e)}"
+                        )
+
+                # Send success message with links if any uploads succeeded
+                if upload_results:
+                    links_text = "\n".join(
+                        [f"• {name}: {link}" for name, link in upload_results])
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=
+                        f"📊 Discussion insights generated and uploaded:\n{links_text}"
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=
+                        "❌ Failed to generate or upload discussion insights")
+
+            except Exception as e:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"❌ Error generating discussion insights: {str(e)}")
+                # Mark transcription as failed and cleanup
+                db.complete_transcription(file_path, error=str(e))
+                db.complete_insight_extraction(file_path)
+                raise e
+
+        except Exception as e:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=
+                f"✅ Transcription completed but failed to upload to Google Drive: {str(e)}"
+            )
+            # Mark transcription as failed and cleanup
+            db.complete_transcription(file_path, error=str(e))
+            db.complete_insight_extraction(file_path)
+            raise e
+
+        # Delete the processing message
+        await processing_msg.delete()
+
+    except Exception as e:
+        # Mark transcription as failed and cleanup
+        db.complete_transcription(file_path, error=str(e))
+        db.complete_insight_extraction(file_path)
+        # Edit the processing message to show error
+        try:
+            await processing_msg.edit_text(
+                f"❌ Error during transcription: {str(e)}")
+        except Exception:
+            # If editing fails, try to send a new message
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ Error during transcription: {str(e)}")
+        raise e
+    finally:
+        # Always ensure we complete insight extraction status
+        db.complete_insight_extraction(file_path)
+
+        # Clean up audio file if it exists
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            logger.error(
+                f"Failed to clean up audio file {file_path}: {str(e)}")
+
+
+async def handle_audio_upload(update: Update,
+                              context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle uploaded audio files for transcription."""
+    # Only process in admin group and only if it's a reply
+    if update.effective_chat.id != ADMIN_GROUP_ID or not update.message.reply_to_message:
+        return
+
+    # Check if this is a reply to our transcribe request
+    request_id = context.user_data.get('transcribe_request_id')
+    if not request_id or update.message.reply_to_message.message_id != request_id:
+        return
+
+    # Check if there's already an active transcription
+    active_transcription = db.get_active_transcription()
+    if active_transcription:
+        await update.message.reply_text(
+            "❌ Another transcription is already in progress. Please wait for it to complete."
+        )
+        return
+
+    # Check if we have an audio file
+    audio_file = None
+    file_name = None
+
+    if update.message.audio:
+        audio_file = update.message.audio
+        file_name = audio_file.file_name
+    elif update.message.voice:
+        audio_file = update.message.voice
+        file_name = f"voice_{update.message.date.strftime('%Y%m%d_%H%M%S')}.ogg"
+    elif update.message.document:
+        # Check if document mime type is audio
+        if update.message.document.mime_type and update.message.document.mime_type.startswith(
+                'audio/'):
+            audio_file = update.message.document
+            file_name = audio_file.file_name
+
+    # Show error message for any non-audio reply
+    if not audio_file:
+        await update.message.reply_text(
+            "❌ Please send a valid audio file. Supported formats:\n"
+            "• Audio messages (voice)\n"
+            "• Audio files (mp3, wav, etc.)\n"
+            "• Audio documents\n\n"
+            "Reply to my previous message with an audio file to start transcription."
+        )
+        return
+
+    # Create necessary directories
+    os.makedirs('./audios', exist_ok=True)
+    os.makedirs('./transcriptions', exist_ok=True)
+    os.makedirs('./discussion_insights', exist_ok=True)
+
+    # Get base filename without extension for consistent naming
+    base_filename = os.path.splitext(file_name)[0]
+
+    # Download the file
+    file = await context.bot.get_file(audio_file.file_id)
+    file_path = f"./audios/{file_name}"
+    await file.download_to_drive(file_path)
+
+    # Send processing message
+    processing_msg = await update.message.reply_text(
+        "🎵 Processing audio file...")
+
+    # Start transcription process in background
+    asyncio.create_task(
+        process_transcription(context.bot, update.effective_chat.id, file_path,
+                              base_filename, processing_msg))
+
+    await update.message.reply_text(
+        "🎵 Started transcription in background. You can use /check_transcription_status to check progress."
+    )
+
+
 def main() -> None:
     """Start the bot."""
     # Create application
@@ -587,7 +904,10 @@ def main() -> None:
     # Set up commands for admin group
     admin_commands = [("help", "Show admin commands and features"),
                       ("export", "Export user data to CSV"),
-                      ("stats", "Show current statistics")]
+                      ("stats", "Show current statistics"),
+                      ("transcribe_audio", "Transcribe an audio file"),
+                      ("check_transcription_status",
+                       "Check status of ongoing transcription")]
 
     # Set up commands for regular users
     user_commands = [("start", "Start the join process or get invite link"),
@@ -641,6 +961,14 @@ def main() -> None:
         CommandHandler("export", export_data, filters=admin_group_filter))
     application.add_handler(
         CommandHandler("stats", stats_command, filters=admin_group_filter))
+    application.add_handler(
+        CommandHandler("transcribe_audio",
+                       transcribe_audio_command,
+                       filters=admin_group_filter))
+    application.add_handler(
+        CommandHandler("check_transcription_status",
+                       check_transcription_status_command,
+                       filters=admin_group_filter))
 
     # Add message handlers
     application.add_handler(CallbackQueryHandler(handle_admin_decision))
@@ -650,6 +978,12 @@ def main() -> None:
         MessageHandler(
             filters.Chat(chat_id=ADMIN_GROUP_ID) & filters.REPLY & filters.TEXT
             & ~filters.COMMAND, handle_rejection_reason))
+
+    # Handler for audio transcription replies - catch all types of replies
+    application.add_handler(
+        MessageHandler(
+            filters.Chat(chat_id=ADMIN_GROUP_ID) & filters.REPLY & filters.ALL
+            & ~filters.COMMAND, handle_audio_upload))
 
     # Handler for survey responses - must be last to not interfere with other handlers
     application.add_handler(

@@ -26,10 +26,28 @@ try:
 except ValueError:
     raise ValueError("TARGET_GROUP_ID must be a valid integer")
 
-GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
-if not GOOGLE_DRIVE_FOLDER_ID:
+GOOGLE_DRIVE_MAIN_FOLDER_ID = os.getenv('GOOGLE_DRIVE_MAIN_FOLDER_ID')
+if not GOOGLE_DRIVE_MAIN_FOLDER_ID:
     raise ValueError(
-        "GOOGLE_DRIVE_FOLDER_ID not found in environment variables")
+        "GOOGLE_DRIVE_MAIN_FOLDER_ID not found in environment variables")
+
+GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID = os.getenv(
+    'GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID')
+if not GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID:
+    raise ValueError(
+        "GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID not found in environment variables"
+    )
+
+GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID = os.getenv(
+    'GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID')
+if not GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID:
+    raise ValueError(
+        "GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID not found in environment variables"
+    )
+
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY not found in environment variables")
 
 # Survey questions
 SURVEY_QUESTIONS = [

@@ -17,6 +17,17 @@ class UserState(Enum):
 
 
 @dataclass
+class TranscriptionStatus:
+    file_path: str
+    percentage: float
+    start_time: datetime
+    is_completed: bool = False
+    is_extracting_insights: bool = False
+    is_fully_completed: bool = False
+    error: Optional[str] = None
+
+
+@dataclass
 class UserData:
     user_id: int
     username: Optional[str]
@@ -41,14 +52,14 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # First, check if the table exists
+            # Create users table if not exists
             cursor.execute('''
                 SELECT name FROM sqlite_master WHERE type='table' AND name='users'
             ''')
             table_exists = cursor.fetchone() is not None
 
             if not table_exists:
-                # Create new table with all fields
+                # Create users table
                 cursor.execute('''
                     CREATE TABLE users (
                         user_id INTEGER PRIMARY KEY,
@@ -62,7 +73,7 @@ class Database:
                     )
                 ''')
             else:
-                # Check if join_datetime, invite_links, and rejection_message_id columns exist
+                # Check and add columns as before
                 cursor.execute('PRAGMA table_info(users)')
                 columns = [col[1] for col in cursor.fetchall()]
                 if 'join_datetime' not in columns:
@@ -82,6 +93,41 @@ class Database:
                         ALTER TABLE users 
                         ADD COLUMN rejection_message_id INTEGER 
                         DEFAULT NULL
+                    ''')
+
+            # Create transcription_status table if not exists
+            cursor.execute('''
+                SELECT name FROM sqlite_master WHERE type='table' AND name='transcription_status'
+            ''')
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                cursor.execute('''
+                    CREATE TABLE transcription_status (
+                        file_path TEXT PRIMARY KEY,
+                        percentage REAL,
+                        start_time TEXT,
+                        is_completed BOOLEAN,
+                        is_extracting_insights BOOLEAN,
+                        is_fully_completed BOOLEAN,
+                        error TEXT
+                    )
+                ''')
+            else:
+                # Check if is_extracting_insights column exists
+                cursor.execute('PRAGMA table_info(transcription_status)')
+                columns = [col[1] for col in cursor.fetchall()]
+                if 'is_extracting_insights' not in columns:
+                    cursor.execute('''
+                        ALTER TABLE transcription_status 
+                        ADD COLUMN is_extracting_insights BOOLEAN 
+                        DEFAULT 0
+                    ''')
+                if 'is_fully_completed' not in columns:
+                    cursor.execute('''
+                        ALTER TABLE transcription_status 
+                        ADD COLUMN is_fully_completed BOOLEAN 
+                        DEFAULT 0
                     ''')
 
             conn.commit()
@@ -167,6 +213,94 @@ class Database:
                 'SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users'
             )
             return [self._user_data_from_row(row) for row in cursor.fetchall()]
+
+    def get_active_transcription(self) -> Optional[TranscriptionStatus]:
+        """Get the currently active transcription if any."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT file_path, percentage, start_time, is_completed, is_extracting_insights, is_fully_completed, error
+                FROM transcription_status
+                WHERE is_fully_completed = 0 AND error IS NULL
+                ORDER BY start_time DESC
+                LIMIT 1
+            ''')
+            row = cursor.fetchone()
+
+            if row:
+                file_path, percentage, start_time, is_completed, is_extracting_insights, is_fully_completed, error = row
+                return TranscriptionStatus(
+                    file_path=file_path,
+                    percentage=percentage,
+                    start_time=datetime.fromisoformat(start_time),
+                    is_completed=bool(is_completed),
+                    is_extracting_insights=bool(is_extracting_insights),
+                    is_fully_completed=bool(is_fully_completed),
+                    error=error)
+            return None
+
+    def start_transcription(self, file_path: str) -> None:
+        """Start a new transcription task."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                INSERT INTO transcription_status (file_path, percentage, start_time, is_completed, is_extracting_insights, is_fully_completed, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (file_path, 0.0, datetime.now(
+                    timezone.utc).isoformat(), False, False, False, None))
+            conn.commit()
+
+    def start_insight_extraction(self, file_path: str) -> None:
+        """Mark a transcription as starting insight extraction."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                UPDATE transcription_status
+                SET is_extracting_insights = 1
+                WHERE file_path = ?
+            ''', (file_path, ))
+            conn.commit()
+
+    def complete_insight_extraction(self, file_path: str) -> None:
+        """Mark insight extraction as complete and set as fully completed."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                UPDATE transcription_status
+                SET is_extracting_insights = 0, is_completed = 1, is_fully_completed = 1
+                WHERE file_path = ?
+            ''', (file_path, ))
+            conn.commit()
+
+    def update_transcription_progress(self, file_path: str,
+                                      percentage: float) -> None:
+        """Update the progress of a transcription task."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                UPDATE transcription_status
+                SET percentage = ?
+                WHERE file_path = ? AND is_completed = 0
+            ''', (percentage, file_path))
+            conn.commit()
+
+    def complete_transcription(self,
+                               file_path: str,
+                               error: Optional[str] = None) -> None:
+        """Mark a transcription as complete or failed."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                UPDATE transcription_status
+                SET is_completed = 1, error = ?
+                WHERE file_path = ?
+            ''', (error, file_path))
+            conn.commit()
 
 
 # Ensure the data directory exists
