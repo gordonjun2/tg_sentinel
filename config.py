@@ -26,6 +26,11 @@ try:
 except ValueError:
     raise ValueError("TARGET_GROUP_ID must be a valid integer")
 
+GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
+if not GOOGLE_DRIVE_FOLDER_ID:
+    raise ValueError(
+        "GOOGLE_DRIVE_FOLDER_ID not found in environment variables")
+
 # Survey questions
 SURVEY_QUESTIONS = [
     "What's your name?", "Which company are you currently with?",

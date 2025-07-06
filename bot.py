@@ -5,11 +5,13 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.ext import (Application, CommandHandler, MessageHandler,
                           CallbackQueryHandler, ContextTypes, filters)
 from telegram.constants import ParseMode
-from config import BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID, SURVEY_QUESTIONS
+from config import BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID, SURVEY_QUESTIONS, GOOGLE_DRIVE_FOLDER_ID
 from database import db, UserState, UserData
 import telegram
 import pytz
 from datetime import datetime
+import asyncio
+from upload_to_google_drive import GoogleDriveUploader
 
 # Enable logging
 logging.basicConfig(
@@ -114,8 +116,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     db.update_user(user_data)
 
     await update.message.reply_text(
-        "Welcome! To join our group, please complete this short survey.\n\n"
-        f"Question 1: {SURVEY_QUESTIONS[0]}")
+        "👋 Welcome to the *Super-Individual Secret Club*! "
+        "🎯We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.\n\n"
+        "To keep this circle intentional, we ask a few quick questions before letting you in. "
+        "🧠 It won't take long — just helps us make sure the right people are in the room. "
+        "👇 Let's begin:\n\n"
+        f"Question 1: {SURVEY_QUESTIONS[0]}",
+        parse_mode=ParseMode.MARKDOWN)
 
 
 async def handle_survey_response(update: Update,
@@ -268,6 +275,18 @@ async def handle_admin_decision(update: Update,
                 f"Request from {user_data.username or user_id} has been approved."
             )
 
+            # Export and upload data
+            try:
+                # Export data
+                _, _, csv_path = await export_data()
+                if csv_path:
+                    # Start upload in background
+                    asyncio.create_task(upload_to_drive(context.bot, csv_path))
+            except Exception as e:
+                await context.bot.send_message(
+                    chat_id=ADMIN_GROUP_ID,
+                    text=f"❌ Error exporting/uploading data: {str(e)}")
+
         except telegram.error.BadRequest as e:
             if "rights to manage chat invite link" in str(e):
                 # Send error as new message instead of editing
@@ -367,15 +386,28 @@ async def handle_rejection_reason(update: Update,
         f"✅ Rejection completed for {user_data.username or user_data.user_id}\nReason: {rejection_reason}"
     )
 
+    # Export and upload data
+    try:
+        # Export data
+        _, _, csv_path = await export_data()
+        if csv_path:
+            # Start upload in background
+            asyncio.create_task(upload_to_drive(context.bot, csv_path))
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=ADMIN_GROUP_ID,
+            text=f"❌ Error exporting/uploading data: {str(e)}")
 
-async def export_data(update: Update,
-                      context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Export all user data to CSV. Only admins can use this command."""
-    # Only allow in admin group
-    if update.effective_chat.id != ADMIN_GROUP_ID:
+
+async def export_data(
+        update: Update = None,
+        context: ContextTypes.DEFAULT_TYPE = None) -> tuple[str, str, str]:
+    """Export all user data to CSV. Returns tuple of (csv_data, filename, csv_path)."""
+    # Only allow command usage in admin group
+    if update and update.effective_chat.id != ADMIN_GROUP_ID:
         await update.message.reply_text(
             "This command can only be used in the admin group.")
-        return
+        return None, None, None
 
     # Set timezone to Singapore (GMT+8)
     sg_tz = pytz.timezone('Asia/Singapore')
@@ -410,17 +442,25 @@ async def export_data(update: Update,
 
         csv_writer.writerow(row)
 
-    # Get current time in Singapore timezone for filename
-    current_sg_time = datetime.now(sg_tz)
-    filename = f'sisc_user_data_{current_sg_time.strftime("%Y%m%d_%H%M%S")}.csv'
+    # Set csv file name
+    filename = 'sisc_user_data.csv'
+    csv_path = filename  # Save in root directory
 
-    # Prepare the CSV file for sending
-    output.seek(0)
-    await context.bot.send_document(chat_id=update.effective_chat.id,
-                                    document=output.getvalue().encode(),
-                                    filename=filename,
-                                    caption='Here is the exported user data.')
+    # Get CSV data and save to file
+    csv_data = output.getvalue()
+    with open(csv_path, 'w') as f:
+        f.write(csv_data)
+
+    # If called as command, send the file
+    if update and context:
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=csv_data.encode(),
+            filename=filename,
+            caption='Here is the exported user data.')
+
     output.close()
+    return csv_data, filename, csv_path
 
 
 async def help_command(update: Update,
@@ -506,6 +546,37 @@ Rejected Users: {rejected_users}
 """
 
     await update.message.reply_text(stats_text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def upload_to_drive(bot, csv_path: str) -> None:
+    """Upload CSV file to Google Drive asynchronously."""
+    try:
+        # Create uploader instance
+        uploader = GoogleDriveUploader()
+
+        # Configure folder ID - you should set this in your config.py
+        folder_id = GOOGLE_DRIVE_FOLDER_ID
+
+        # Run the upload in a thread pool to not block
+        loop = asyncio.get_running_loop()
+        upload_result = await loop.run_in_executor(
+            None, lambda: uploader.upload_file(csv_path, folder_id))
+
+        if upload_result:
+            await bot.send_message(
+                chat_id=ADMIN_GROUP_ID,
+                text=
+                f"✅ Successfully uploaded {csv_path} to Google Drive\nLink: {upload_result.get('webViewLink')}"
+            )
+        else:
+            await bot.send_message(
+                chat_id=ADMIN_GROUP_ID,
+                text=f"❌ Failed to upload {csv_path} to Google Drive")
+
+    except Exception as e:
+        await bot.send_message(
+            chat_id=ADMIN_GROUP_ID,
+            text=f"❌ Error uploading to Google Drive: {str(e)}")
 
 
 def main() -> None:
