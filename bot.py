@@ -8,7 +8,8 @@ from telegram.constants import ParseMode
 from config import (BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID,
                     SURVEY_QUESTIONS, GOOGLE_DRIVE_MAIN_FOLDER_ID,
                     GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
-                    GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID)
+                    GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID,
+                    TELEGRAM_API_KEY, TELEGRAM_HASH, MAX_AUDIO_FILE_SIZE)
 from database import db, UserState, UserData
 import telegram
 import pytz
@@ -17,6 +18,7 @@ import asyncio
 from upload_to_google_drive import GoogleDriveUploader
 from audio_transcribe import AudioTranscriber
 import os
+from pyrogram import Client, utils
 
 # Enable logging
 logging.basicConfig(
@@ -26,6 +28,20 @@ logger = logging.getLogger(__name__)
 
 # Initialize transcriber
 transcriber = AudioTranscriber()
+
+
+# [Pyrogram] Monkey Patch
+def get_peer_type(peer_id: int) -> str:
+    peer_id_str = str(peer_id)
+    if not peer_id_str.startswith("-"):
+        return "user"
+    elif peer_id_str.startswith("-100"):
+        return "channel"
+    else:
+        return "chat"
+
+
+utils.get_peer_type = get_peer_type
 
 
 async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
@@ -49,7 +65,7 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
 
         return new_link.invite_link
     except telegram.error.BadRequest as e:
-        if "rights to manage chat invite link" in str(e):
+        if "rights to manage chat invite link" in str(e).lower():
             raise telegram.error.BadRequest(
                 "Bot needs admin rights to manage invite links")
         raise e
@@ -97,7 +113,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"You were already approved! Here's a new invite link to join: {invite_link}"
             )
         except telegram.error.BadRequest as e:
-            if "rights to manage chat invite link" in str(e):
+            if "rights to manage chat invite link" in str(e).lower():
                 await update.message.reply_text(
                     "You were already approved! Please wait while I notify the admins to help you join."
                 )
@@ -231,7 +247,7 @@ async def handle_admin_decision(update: Update,
                 f"User {user_data.username or user_id} was already approved. Sent new invite link."
             )
         except telegram.error.BadRequest as e:
-            if "rights to manage chat invite link" in str(e):
+            if "rights to manage chat invite link" in str(e).lower():
                 # Send error as new message instead of editing
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
@@ -296,7 +312,7 @@ async def handle_admin_decision(update: Update,
                     text=f"❌ Error exporting/uploading data: {str(e)}")
 
         except telegram.error.BadRequest as e:
-            if "rights to manage chat invite link" in str(e):
+            if "rights to manage chat invite link" in str(e).lower():
                 # Send error as new message instead of editing
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
@@ -812,13 +828,46 @@ async def process_transcription(bot, chat_id, file_path: str,
         # Always ensure we complete insight extraction status
         db.complete_insight_extraction(file_path)
 
-        # Clean up audio file if it exists
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception as e:
-            logger.error(
-                f"Failed to clean up audio file {file_path}: {str(e)}")
+
+async def download_large_file(message_id: int, chat_id: int,
+                              file_path: str) -> bool:
+    """Download large file using Pyrogram."""
+    client = None
+    try:
+        # Create a new client instance for this download with bot token
+        client = Client(
+            "audio_downloader_temp",
+            api_id=TELEGRAM_API_KEY,
+            api_hash=TELEGRAM_HASH,
+            bot_token=BOT_TOKEN  # Use bot token for authentication
+        )
+        await client.start()
+
+        # Get the message first
+        message = await client.get_messages(chat_id=chat_id,
+                                            message_ids=message_id)
+        if not message:
+            logger.error("Could not find message to download")
+            return False
+
+        # Download the file in a separate task to not block
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: client.download_media(
+                message=message,
+                file_name=file_path,
+                block=True  # Use blocking mode in the executor
+            ))
+
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download file using Pyrogram: {e}")
+        return False
+    finally:
+        # Always ensure client is stopped
+        if client and client.is_connected:
+            await client.stop()
 
 
 async def handle_audio_upload(update: Update,
@@ -869,6 +918,14 @@ async def handle_audio_upload(update: Update,
         )
         return
 
+    # Check file size against configured limit
+    if audio_file.file_size > MAX_AUDIO_FILE_SIZE:
+        size_in_mb = MAX_AUDIO_FILE_SIZE / (1024 * 1024)
+        await update.message.reply_text(
+            f"❌ Audio file is too large (over {size_in_mb:.0f} MB). Please use a smaller file."
+        )
+        return
+
     # Create necessary directories
     os.makedirs('./audios', exist_ok=True)
     os.makedirs('./transcriptions', exist_ok=True)
@@ -876,11 +933,32 @@ async def handle_audio_upload(update: Update,
 
     # Get base filename without extension for consistent naming
     base_filename = os.path.splitext(file_name)[0]
-
-    # Download the file
-    file = await context.bot.get_file(audio_file.file_id)
     file_path = f"./audios/{file_name}"
-    await file.download_to_drive(file_path)
+
+    try:
+        # Try to get and download the file using Bot API first
+        file = await context.bot.get_file(audio_file.file_id)
+        await file.download_to_drive(file_path)
+    except telegram.error.BadRequest as e:
+        if "too big" in str(e).lower():
+            # File is too big for Bot API, try Pyrogram
+            await update.message.reply_text(
+                "📥 File is larger than 20MB. Attempting to download using user session method..."
+            )
+
+            success = await download_large_file(
+                message_id=update.message.message_id,
+                chat_id=update.effective_chat.id,
+                file_path=file_path)
+
+            if not success:
+                await update.message.reply_text(
+                    "❌ Failed to download the large file. Please try again or use a smaller file."
+                )
+                return
+        else:
+            # Re-raise if it's a different BadRequest error
+            raise e
 
     # Send processing message
     processing_msg = await update.message.reply_text(
@@ -896,8 +974,37 @@ async def handle_audio_upload(update: Update,
     )
 
 
+def reset_active_transcriptions():
+    """Reset all active transcriptions in the database."""
+    try:
+        active_transcription = db.get_active_transcription()
+        if active_transcription:
+            # Just mark the existing transcription as completed with error
+            db.complete_transcription(
+                active_transcription.file_path,
+                error=
+                "Application restarted - Previous transcription was incomplete"
+            )
+            db.complete_insight_extraction(active_transcription.file_path)
+
+            # Log the reset
+            logger.info(
+                f"Reset incomplete transcription for file: {active_transcription.file_path}"
+            )
+    except Exception as e:
+        logger.error(f"Failed to reset active transcriptions: {str(e)}")
+
+
 def main() -> None:
     """Start the bot."""
+    # Reset any active transcriptions from previous runs
+    reset_active_transcriptions()
+
+    # Create necessary directories
+    os.makedirs('./audios', exist_ok=True)
+    os.makedirs('./transcriptions', exist_ok=True)
+    os.makedirs('./discussion_insights', exist_ok=True)
+
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
 

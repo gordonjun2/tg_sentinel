@@ -211,3 +211,7 @@ __marimo__/
 data/
 service_account.json
 *.csv
+*.session
+audios/
+discussion_insights/
+transcriptions/

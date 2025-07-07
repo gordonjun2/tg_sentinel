@@ -49,6 +49,14 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
+TELEGRAM_API_KEY = os.getenv('TELEGRAM_API_KEY')
+if not TELEGRAM_API_KEY:
+    raise ValueError("TELEGRAM_API_KEY not found in environment variables")
+
+TELEGRAM_HASH = os.getenv('TELEGRAM_HASH')
+if not TELEGRAM_HASH:
+    raise ValueError("TELEGRAM_HASH not found in environment variables")
+
 # Survey questions
 SURVEY_QUESTIONS = [
     "What's your name?", "Which company are you currently with?",
@@ -56,3 +64,6 @@ SURVEY_QUESTIONS = [
     "Please share your LinkedIn profile.",
     "What's one AI tool you use regularly, and why do you find it valuable?"
 ]
+
+# File size limits (in bytes)
+MAX_AUDIO_FILE_SIZE = 1024 * 1024 * 1024
