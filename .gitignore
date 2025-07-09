@@ -212,6 +212,7 @@ data/
 service_account.json
 *.csv
 *.session
+*.session-journal
 audios/
 discussion_insights/
 transcriptions/
