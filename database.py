@@ -104,7 +104,8 @@ class Database:
             if not table_exists:
                 cursor.execute('''
                     CREATE TABLE transcription_status (
-                        file_path TEXT PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_path TEXT,
                         percentage REAL,
                         start_time TEXT,
                         is_completed BOOLEAN,
@@ -259,46 +260,62 @@ class Database:
                 '''
                 UPDATE transcription_status
                 SET is_extracting_insights = 1
-                WHERE file_path = ?
+                WHERE id = (
+                    SELECT id FROM transcription_status 
+                    WHERE file_path = ? AND is_fully_completed = 0 
+                    ORDER BY start_time DESC LIMIT 1
+                )
             ''', (file_path, ))
             conn.commit()
 
     def complete_insight_extraction(self, file_path: str) -> None:
-        """Mark insight extraction as complete and set as fully completed."""
+        """Mark a transcription as fully completed."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''
                 UPDATE transcription_status
-                SET is_extracting_insights = 0, is_completed = 1, is_fully_completed = 1
-                WHERE file_path = ?
+                SET is_fully_completed = 1
+                WHERE id = (
+                    SELECT id FROM transcription_status 
+                    WHERE file_path = ? AND is_fully_completed = 0 
+                    ORDER BY start_time DESC LIMIT 1
+                )
             ''', (file_path, ))
             conn.commit()
 
     def update_transcription_progress(self, file_path: str,
                                       percentage: float) -> None:
-        """Update the progress of a transcription task."""
+        """Update the progress of a transcription."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''
                 UPDATE transcription_status
                 SET percentage = ?
-                WHERE file_path = ? AND is_completed = 0
+                WHERE id = (
+                    SELECT id FROM transcription_status 
+                    WHERE file_path = ? AND is_fully_completed = 0 
+                    ORDER BY start_time DESC LIMIT 1
+                )
             ''', (percentage, file_path))
             conn.commit()
 
     def complete_transcription(self,
                                file_path: str,
                                error: Optional[str] = None) -> None:
-        """Mark a transcription as complete or failed."""
+        """Mark a transcription as complete."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''
                 UPDATE transcription_status
                 SET is_completed = 1, error = ?
-                WHERE file_path = ?
+                WHERE id = (
+                    SELECT id FROM transcription_status 
+                    WHERE file_path = ? AND is_fully_completed = 0 
+                    ORDER BY start_time DESC LIMIT 1
+                )
             ''', (error, file_path))
             conn.commit()
 

@@ -829,45 +829,66 @@ async def process_transcription(bot, chat_id, file_path: str,
         db.complete_insight_extraction(file_path)
 
 
-async def download_large_file(message_id: int, chat_id: int,
-                              file_path: str) -> bool:
-    """Download large file using Pyrogram."""
-    client = None
-    try:
-        # Create a new client instance for this download with bot token
-        client = Client(
-            "audio_downloader_temp",
-            api_id=TELEGRAM_API_KEY,
-            api_hash=TELEGRAM_HASH,
-            bot_token=BOT_TOKEN  # Use bot token for authentication
-        )
-        await client.start()
+async def download_large_file(message_id: int,
+                              chat_id: int,
+                              file_path: str,
+                              progress_callback=None) -> bool:
+    """Download large file using Pyrogram in a non-blocking way."""
 
-        # Get the message first
-        message = await client.get_messages(chat_id=chat_id,
-                                            message_ids=message_id)
-        if not message:
-            logger.error("Could not find message to download")
+    def _download_with_pyrogram(main_loop):
+        """Inner function to run in executor."""
+        try:
+            client = Client("audio_downloader_temp",
+                            api_id=TELEGRAM_API_KEY,
+                            api_hash=TELEGRAM_HASH,
+                            bot_token=BOT_TOKEN)
+
+            # Start client in a blocking way since we're in a thread
+            client.start()
+
+            # Get the message
+            message = client.get_messages(chat_id=chat_id,
+                                          message_ids=message_id)
+            if not message:
+                logger.error("Could not find message to download")
+                return False
+
+            # Download with progress
+            def progress(current, total):
+                if progress_callback:
+                    # Schedule the callback in the main event loop
+                    future = asyncio.run_coroutine_threadsafe(
+                        progress_callback(current, total), main_loop)
+                    # Wait for the callback to complete
+                    try:
+                        future.result(timeout=1)  # 1 second timeout
+                    except Exception:
+                        # Ignore timeout or other errors in progress updates
+                        pass
+
+            # Download the file
+            result = client.download_media(message=message,
+                                           file_name=file_path,
+                                           progress=progress,
+                                           block=True)
+
+            # Cleanup
+            client.stop()
+            return bool(result)
+
+        except Exception as e:
+            logger.error(f"Failed to download file using Pyrogram: {e}")
             return False
 
-        # Download the file in a separate task to not block
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: client.download_media(
-                message=message,
-                file_name=file_path,
-                block=True  # Use blocking mode in the executor
-            ))
-
-        return True
+    try:
+        # Get the current event loop to pass to the executor
+        loop = asyncio.get_event_loop()
+        # Run the download process in executor
+        return await loop.run_in_executor(
+            None, lambda: _download_with_pyrogram(loop))
     except Exception as e:
-        logger.error(f"Failed to download file using Pyrogram: {e}")
+        logger.error(f"Error in download executor: {e}")
         return False
-    finally:
-        # Always ensure client is stopped
-        if client and client.is_connected:
-            await client.stop()
 
 
 async def handle_audio_upload(update: Update,
@@ -942,20 +963,35 @@ async def handle_audio_upload(update: Update,
     except telegram.error.BadRequest as e:
         if "too big" in str(e).lower():
             # File is too big for Bot API, try Pyrogram
-            await update.message.reply_text(
-                "📥 File is larger than 20MB. Attempting to download using user session method..."
-            )
+            progress_msg = await update.message.reply_text(
+                "📥 File is larger than 20MB. Starting download using alternative method...\n"
+                "Progress: 0%")
+
+            # Create progress callback
+            async def progress_callback(current: int, total: int):
+                try:
+                    percentage = (current / total) * 100
+                    await progress_msg.edit_text(
+                        f"📥 Downloading large file...\n"
+                        f"Progress: {percentage:.1f}%")
+                except Exception:
+                    # Ignore errors from too many updates
+                    pass
 
             success = await download_large_file(
                 message_id=update.message.message_id,
                 chat_id=update.effective_chat.id,
-                file_path=file_path)
+                file_path=file_path,
+                progress_callback=progress_callback)
 
             if not success:
                 await update.message.reply_text(
                     "❌ Failed to download the large file. Please try again or use a smaller file."
                 )
                 return
+
+            # Delete progress message on success
+            await progress_msg.delete()
         else:
             # Re-raise if it's a different BadRequest error
             raise e
