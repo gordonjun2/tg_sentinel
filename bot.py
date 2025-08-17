@@ -18,6 +18,7 @@ import asyncio
 from upload_to_google_drive import GoogleDriveUploader
 from audio_transcribe import AudioTranscriber
 import os
+import time
 from pyrogram import Client, utils
 
 # Enable logging
@@ -829,65 +830,66 @@ async def process_transcription(bot, chat_id, file_path: str,
         db.complete_insight_extraction(file_path)
 
 
-async def download_large_file(message_id: int,
-                              chat_id: int,
-                              file_path: str,
-                              progress_callback=None) -> bool:
-    """Download large file using Pyrogram in a non-blocking way."""
+async def download_large_file(
+    message_id: int,
+    chat_id: int,
+    file_path: str,
+    progress_callback=None
+) -> bool:
+    """Download large file using Pyrogram asynchronously, with throttled progress updates."""
 
-    def _download_with_pyrogram(main_loop):
-        """Inner function to run in executor."""
-        try:
-            client = Client("audio_downloader_temp",
-                            api_id=TELEGRAM_API_KEY,
-                            api_hash=TELEGRAM_HASH,
-                            bot_token=BOT_TOKEN)
+    # Get main running loop
+    try:
+        main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        main_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(main_loop)
 
-            # Start client in a blocking way since we're in a thread
-            client.start()
+    try:
+        async with Client(
+            "audio_downloader_temp",
+            api_id=TELEGRAM_API_KEY,
+            api_hash=TELEGRAM_HASH,
+            bot_token=BOT_TOKEN
+        ) as client:
 
             # Get the message
-            message = client.get_messages(chat_id=chat_id,
-                                          message_ids=message_id)
+            message = await client.get_messages(chat_id=chat_id, message_ids=message_id)
             if not message:
                 logger.error("Could not find message to download")
                 return False
 
-            # Download with progress
+            # Throttle variables
+            last_update_time = 0
+            min_interval = 5.0  # seconds between updates
+
+            # Progress callback wrapper (scheduled in main loop)
             def progress(current, total):
-                if progress_callback:
-                    # Schedule the callback in the main event loop
+                nonlocal last_update_time
+                now = time.time()
+
+                # Only update if min_interval has passed or download is finished
+                if progress_callback and (now - last_update_time >= min_interval or current == total):
+                    last_update_time = now
                     future = asyncio.run_coroutine_threadsafe(
-                        progress_callback(current, total), main_loop)
-                    # Wait for the callback to complete
+                        progress_callback(current, total), main_loop
+                    )
                     try:
-                        future.result(timeout=1)  # 1 second timeout
+                        future.result(timeout=1)
                     except Exception:
-                        # Ignore timeout or other errors in progress updates
                         pass
 
             # Download the file
-            result = client.download_media(message=message,
-                                           file_name=file_path,
-                                           progress=progress,
-                                           block=True)
+            result = await client.download_media(
+                message=message,
+                file_name=file_path,
+                progress=progress
+            )
 
-            # Cleanup
-            client.stop()
             return bool(result)
 
-        except Exception as e:
-            logger.error(f"Failed to download file using Pyrogram: {e}")
-            return False
-
-    try:
-        # Get the current event loop to pass to the executor
-        loop = asyncio.get_event_loop()
-        # Run the download process in executor
-        return await loop.run_in_executor(
-            None, lambda: _download_with_pyrogram(loop))
     except Exception as e:
-        logger.error(f"Error in download executor: {e}")
+        logger.error(f"Failed to download file using Pyrogram: {e}")
         return False
 
 
