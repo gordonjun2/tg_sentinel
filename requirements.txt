@@ -3,6 +3,7 @@ python-dotenv==1.0.0
 pytz
 google-api-python-client>=2.86.0
 google-auth>=2.22.0
+google-auth-oauthlib==1.2.2
 huggingface_hub
 requests
 urllib3

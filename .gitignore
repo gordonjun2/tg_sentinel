@@ -210,6 +210,8 @@ __marimo__/
 *.db
 data/
 service_account.json
+token.json
+credentials.json
 *.csv
 *.session
 *.session-journal
