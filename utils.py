@@ -60,6 +60,28 @@ Combine and deduplicate the main discussion points from all segments. Group simi
 # Mentioned Projects / Products / Tools
 List all unique projects, products, tools, companies, or technologies that were mentioned across segments. If any were repeated, merge context where relevant. Include short descriptions if they were provided.
 
+# Community Knowledge & Shared Insights
+Capture the collective knowledge, thoughts, and perspectives that were shared by community members during the discussion. This includes:
+- Unique insights or expertise contributed by participants
+- Diverse viewpoints or approaches discussed
+- Lessons learned or experiences shared
+- Best practices or recommendations mentioned
+- Community-driven ideas or collaborative thoughts
+- Any knowledge exchange that adds value beyond the basic discussion points
+
+Organize these insights thematically and attribute them to speakers when available. This section should highlight the value of bringing together different perspectives and expertise.
+
+# What's Next / Action Items
+Extract and summarize any actionable next steps, follow-ups, or future plans that were discussed. This includes:
+- Tasks or commitments mentioned by participants
+- Planned next steps or follow-up actions
+- Deadlines or timelines referenced
+- Decisions that require follow-through
+- Open questions or items that need resolution
+- Any concrete actions that the community agreed upon or discussed
+
+Present these as actionable items when possible. If no specific action items were discussed, note that in this section.
+
 # Notable Quotes or Opinions (optional)
 Include a curated list of the most insightful or opinionated quotes. Attribute them if speaker names or labels were available. Only include quotes that add meaningful perspective.
 ------
@@ -70,6 +92,7 @@ Guidelines:
 - Focus on **clarity, conciseness, and logical organization**.
 - Output only markdown content — do not explain or add commentary.
 - Do not add the '------' separator at the start and the end of the output.
+- For the "What's Next / Action Items" section, be specific and actionable when possible. If discussions were exploratory without concrete next steps, note that appropriately.
 
 The final result should be ready for presentation in a document or report.
 """

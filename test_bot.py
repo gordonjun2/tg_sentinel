@@ -1,6 +1,6 @@
 import asyncio
 from telegram import Bot, Poll
-from config import BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID
+from config import BOT_TOKEN, TARGET_GROUP_ID
 
 
 async def test_bot():
@@ -13,22 +13,20 @@ async def test_bot():
         message = await bot.send_message(
             chat_id=TARGET_GROUP_ID,
             text=
-            "Thanks for joining our last Super-Individual Secret Club session — your energy made it 🔥🧠\n\n"
-            "Next one's coming up, and we want your vote for the next theme.\n\n"
-            "👇 Vote below:",
+            "Thanks for joining our last Super-Individual Secret Club session — your energy made it 🔥🧠\n\n",
             parse_mode="Markdown")
 
         # Send a test poll
         poll = await bot.send_poll(
             chat_id=TARGET_GROUP_ID,
             question=
-            "Which topic would you like to explore in our next session?",
+            "Which topic would you like to explore in our next session? (multi-select)",
             options=[
-                "💸 AI & Universal Basic Income (UBI)", "🔮 AI & Divination",
-                "🤖 Embodied AI", "Others (please let us know)"
+                "🧬 AI & Bioscience", "🤖 AI & Generative Engine Optimization (GEO)",
+                "👨‍💻 Vibe Coding Stand up", "Others (please let us know)"
             ],
             is_anonymous=False,  # Make poll non-anonymous
-            allows_multiple_answers=False)
+            allows_multiple_answers=True)
 
         print("✅ Successfully sent test message and poll!")
         print(f"Message ID: {message.message_id}")
