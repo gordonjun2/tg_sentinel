@@ -38,8 +38,9 @@ Mentioned Projects / Products / Tools:
 Identify all specific projects, products, tools, companies, or technologies mentioned in the text. For each one, provide a short description based on the context, or from external knowledge if the context is unclear or transcription appears inaccurate.
 Some names or terms may be misspelled. Use your knowledge of known technologies, companies, and tools to infer the most likely intended references and replace or correct them as needed. Aim for accuracy and relevance.
 
-Notable Quotes or Opinions:
-Extract any statements that reflect strong opinions, insightful comments, or notable quotes. Attribute them to the speaker if speaker names or labels are present.
+Community Knowledge & Shared Insights:
+Capture and list the collective insights, specialized knowledge, or unique viewpoints shared by participants during the discussion. 
+Summarize perspectives, lessons learned, expertise, best practices, and recommendations that represent the value of shared learning and collaboration within the community.
 ------
 
 The transcript will be sent in batches, so treat each batch as part of a larger conversation. Do not summarize or conclude; just extract structured information for the current segment.

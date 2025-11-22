@@ -22,8 +22,8 @@ async def test_bot():
             question=
             "Which topic would you like to explore in our next session? (multi-select)",
             options=[
-                "🧬 AI & Bioscience", "🤖 AI & Generative Engine Optimization (GEO)",
-                "👨‍💻 Vibe Coding Stand up", "Others (please let us know)"
+                "👩‍🏫 AI & Education", "🤖 AI & Generative Engine Optimization (GEO)",
+                "🎊 AI & Cultural Intelligence (CQ)", "💻 AI & Intelligence", "Others (please let us know)"
             ],
             is_anonymous=False,  # Make poll non-anonymous
             allows_multiple_answers=True)
