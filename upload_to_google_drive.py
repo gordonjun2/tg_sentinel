@@ -15,18 +15,17 @@ class GoogleDriveUploader:
         self.TOKEN_FILE = 'token.json'
         self.CREDENTIALS_FILE = 'credentials.json'
 
-    ## For service account authentication
-    # def authenticate_service_account(self):
-    #     """Handles the authentication using service account."""
-    #     if not os.path.exists(self.SERVICE_ACCOUNT_FILE):
-    #         raise FileNotFoundError(
-    #             f"{self.SERVICE_ACCOUNT_FILE} not found. Please download it from Google Cloud Console."
-    #         )
+    def authenticate_service_account(self):
+        """Handles the authentication using service account."""
+        if not os.path.exists(self.SERVICE_ACCOUNT_FILE):
+            raise FileNotFoundError(
+                f"{self.SERVICE_ACCOUNT_FILE} not found. Please download it from Google Cloud Console."
+            )
 
-    #     credentials = service_account.Credentials.from_service_account_file(
-    #         self.SERVICE_ACCOUNT_FILE, scopes=self.SCOPES)
+        credentials = service_account.Credentials.from_service_account_file(
+            self.SERVICE_ACCOUNT_FILE, scopes=self.SCOPES)
 
-    #     return build('drive', 'v3', credentials=credentials)
+        return build('drive', 'v3', credentials=credentials)
 
     def authenticate_user(self):
         """Authenticate user via OAuth2, saving/refreshing token.json for automation."""
@@ -34,20 +33,41 @@ class GoogleDriveUploader:
         # Load saved token if it exists
         if os.path.exists(self.TOKEN_FILE):
             creds = Credentials.from_authorized_user_file(self.TOKEN_FILE, self.SCOPES)
+            
         # Refresh or request new login if needed
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"Token refresh failed: {e}. Requesting new authorization.")
+                    creds = None
+                    
+            if not creds:
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.CREDENTIALS_FILE, self.SCOPES
                 )
                 creds = flow.run_local_server(port=0)  # Opens browser only first time
-                # creds = flow.run_console()
+                
             # Save token for reuse
             with open(self.TOKEN_FILE, "w") as token:
                 token.write(creds.to_json())
+                
         return build("drive", "v3", credentials=creds)
+
+    def get_service(self):
+        """Determines the best authentication method and returns the service."""
+        if os.path.exists(self.SERVICE_ACCOUNT_FILE):
+            print("Authenticating with Service Account...")
+            return self.authenticate_service_account()
+        elif os.path.exists(self.CREDENTIALS_FILE) or os.path.exists(self.TOKEN_FILE):
+            print("Authenticating with User OAuth...")
+            return self.authenticate_user()
+        else:
+            raise FileNotFoundError(
+                f"Authentication failed. Please provide either {self.SERVICE_ACCOUNT_FILE} "
+                f"for service account auth, or {self.CREDENTIALS_FILE} for OAuth."
+            )
 
     def find_and_delete_existing_file(self,
                                       service,
@@ -93,7 +113,7 @@ class GoogleDriveUploader:
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"File not found: {file_path}")
 
-            service = self.authenticate_user()
+            service = self.get_service()
             file_name = os.path.basename(file_path)
 
             # Delete existing file with the same name if it exists
