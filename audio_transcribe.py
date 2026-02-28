@@ -2,6 +2,7 @@ import whisper
 import whisperx
 import time  # Add time module for timing
 import os
+import sys
 import time
 from google import genai
 from google.genai import types
@@ -163,3 +164,27 @@ class AudioTranscriber:
             db.complete_insight_extraction(file_path)
             # Re-raise the exception to be handled by the caller
             raise e
+
+
+if __name__ == "__main__":
+    transcriber = AudioTranscriber()
+    
+    # Get file path from command line argument or prompt user
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+    else:
+        file_path = input("Enter the transcription file path: ").strip()
+    
+    # Validate file exists
+    if not os.path.exists(file_path):
+        print(f"Error: File not found: {file_path}")
+        sys.exit(1)
+    
+    # Extract discussion insights
+    print(f"Processing file: {file_path}")
+    try:
+        transcriber.extract_discussion_insight(file_path)
+        print("Insight extraction completed successfully!")
+    except Exception as e:
+        print(f"Error during insight extraction: {e}")
+        sys.exit(1)

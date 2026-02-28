@@ -9,27 +9,30 @@ async def test_bot():
         # Initialize bot
         bot = Bot(BOT_TOKEN)
 
-        # Send a test message
-        message = await bot.send_message(
-            chat_id=TARGET_GROUP_ID,
-            text=
-            "Thanks for joining our last Super-Individual Secret Club session — your energy made it 🔥🧠\n\n",
-            parse_mode="Markdown")
+        # # Send a test message
+        # message = await bot.send_message(
+        #     chat_id=TARGET_GROUP_ID,
+        #     text=
+        #     "Thanks for joining our last Super-Individual Secret Club session — your energy made it 🔥🧠\n\n",
+        #     parse_mode="Markdown")
 
         # Send a test poll
         poll = await bot.send_poll(
             chat_id=TARGET_GROUP_ID,
             question=
-            "Which topic would you like to explore in our next session? (multi-select)",
+            "Hi Super-Individuals!\nWhich topic would you like to explore in our next session? (multi-select)",
             options=[
-                "👩‍🏫 AI & Education", "🤖 AI & Generative Engine Optimization (GEO)",
-                "🎊 AI & Cultural Intelligence (CQ)", "💻 AI & Intelligence", "Others (please let us know)"
+                "🎮 AI & Gaming",
+                "🧼 AI & Money Laundering",
+                "🧸 AI & Toy", 
+                "🌍 AI & Universal Basic Income (UBI)",
+                "Others (please let us know)"
             ],
             is_anonymous=False,  # Make poll non-anonymous
             allows_multiple_answers=True)
 
         print("✅ Successfully sent test message and poll!")
-        print(f"Message ID: {message.message_id}")
+        # print(f"Message ID: {message.message_id}")
         print(f"Poll ID: {poll.message_id}")
 
     except Exception as e:
