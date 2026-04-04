@@ -201,8 +201,17 @@ async def handle_survey_response(update: Update,
         )
 
         # Notify admin group
-        survey_answers = "\n".join(f"{q}: {user_data.answers.get(q, '')}"
-                                   for q in SURVEY_QUESTIONS)
+        # Build survey answers, skipping Question 7 if not relevant
+        answers_text = []
+        for q in SURVEY_QUESTIONS:
+            # Skip "Who is your referral?" if user didn't select "Referral"
+            if q == "Who is your referral?":
+                sisc_question = "How do you know about SISC?"
+                if user_data.answers.get(sisc_question) != "Referral":
+                    continue
+            answers_text.append(f"{q}: {user_data.answers.get(q, '')}")
+
+        survey_answers = "\n".join(answers_text)
 
         keyboard = [[
             InlineKeyboardButton("Approve",
@@ -247,6 +256,9 @@ async def handle_survey_option_selection(update: Update,
     """Handle survey option selection from inline keyboard."""
     query = update.callback_query
     await query.answer()
+
+    # Remove buttons from the original message
+    await query.edit_message_reply_markup(reply_markup=None)
 
     user_id = update.effective_user.id
     user_data = db.get_user(user_id)
@@ -298,8 +310,17 @@ async def handle_survey_option_selection(update: Update,
             )
 
             # Notify admin group
-            survey_answers = "\n".join(f"{q}: {user_data.answers.get(q, '')}"
-                                       for q in SURVEY_QUESTIONS)
+            # Build survey answers, skipping Question 7 if not relevant
+            answers_text = []
+            for q in SURVEY_QUESTIONS:
+                # Skip "Who is your referral?" if user didn't select "Referral"
+                if q == "Who is your referral?":
+                    sisc_question = "How do you know about SISC?"
+                    if user_data.answers.get(sisc_question) != "Referral":
+                        continue
+                answers_text.append(f"{q}: {user_data.answers.get(q, '')}")
+
+            survey_answers = "\n".join(answers_text)
 
             keyboard = [[
                 InlineKeyboardButton("Approve",
@@ -320,6 +341,9 @@ async def handle_survey_back_navigation(update: Update,
     """Handle back navigation from Question 7 to Question 6."""
     query = update.callback_query
     await query.answer()
+
+    # Remove buttons from the original message
+    await query.edit_message_reply_markup(reply_markup=None)
 
     user_id = update.effective_user.id
     user_data = db.get_user(user_id)
@@ -617,6 +641,11 @@ async def export_data(
         ]
         # Add answers in the same order as questions
         for question in SURVEY_QUESTIONS:
+            # Skip "Who is your referral?" if user didn't select "Referral"
+            if question == "Who is your referral?":
+                sisc_question = "How do you know about SISC?"
+                if user.answers.get(sisc_question) != "Referral":
+                    continue
             row.append(user.answers.get(question, ''))
 
         csv_writer.writerow(row)
