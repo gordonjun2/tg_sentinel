@@ -215,6 +215,23 @@ class Database:
             )
             return [self._user_data_from_row(row) for row in cursor.fetchall()]
 
+    def delete_pending_approval_users(self) -> int:
+        """Delete all users with PENDING_APPROVAL state.
+
+        Returns:
+            int: Number of records deleted
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                    DELETE FROM users
+                    WHERE state = ?
+                    ''', (UserState.PENDING_APPROVAL.value, ))
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+
     def get_active_transcription(self) -> Optional[TranscriptionStatus]:
         """Get the currently active transcription if any."""
         with sqlite3.connect(self.db_path) as conn:

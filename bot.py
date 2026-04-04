@@ -675,6 +675,7 @@ Note: Each invite link can only be used once and expires after use.
 /help - Show this help message
 /export - Export user data to CSV
 /stats - Show current statistics
+/reset_pending_approval - Clear all pending approval records
 
 *Audio Processing Commands:*
 /transcribe\\_audio - Start audio transcription
@@ -735,6 +736,28 @@ Rejected Users: {rejected_users}
 """
 
     await update.message.reply_text(stats_text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def reset_pending_approval_command(update: Update,
+                                      context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Delete all users with PENDING_APPROVAL state."""
+    # Only allow in admin group
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        await update.message.reply_text(
+            "This command can only be used in the admin group.")
+        return
+    
+    # Delete pending approval users
+    deleted_count = db.delete_pending_approval_users()
+    
+    if deleted_count > 0:
+        await update.message.reply_text(
+            f"✅ Successfully cleared {deleted_count} pending approval record(s)."
+        )
+    else:
+        await update.message.reply_text(
+            "No pending approval records found to clear."
+        )
 
 
 async def upload_to_drive(bot, csv_path: str) -> None:
@@ -1260,6 +1283,10 @@ def main() -> None:
         CommandHandler("export", export_data, filters=admin_group_filter))
     application.add_handler(
         CommandHandler("stats", stats_command, filters=admin_group_filter))
+    application.add_handler(
+        CommandHandler("reset_pending_approval",
+                       reset_pending_approval_command,
+                       filters=admin_group_filter))
     application.add_handler(
         CommandHandler("transcribe_audio",
                        transcribe_audio_command,
