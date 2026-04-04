@@ -675,7 +675,7 @@ Note: Each invite link can only be used once and expires after use.
 /help - Show this help message
 /export - Export user data to CSV
 /stats - Show current statistics
-/reset_pending_approval - Clear all pending approval records
+/reset\\_pending\\_approval - Clear all pending approval records
 
 *Audio Processing Commands:*
 /transcribe\\_audio - Start audio transcription
