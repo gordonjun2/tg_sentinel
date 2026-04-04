@@ -167,6 +167,24 @@ async def handle_survey_response(update: Update,
         )
         return
 
+    # Check if current question is "How do you know about SISC?" - user should use buttons
+    if SURVEY_QUESTIONS[user_data.current_question] == "How do you know about SISC?":
+        keyboard = [[
+            InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
+            InlineKeyboardButton("Newsletter", callback_data="Newsletter")
+        ], [
+            InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
+            InlineKeyboardButton("Referral", callback_data="Referral")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            f"Please select an option from the buttons below:\n\n"
+            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
+            reply_markup=reply_markup
+        )
+        return
+
     # Save the answer
     current_question = SURVEY_QUESTIONS[user_data.current_question]
     user_data.answers[current_question] = update.message.text
@@ -199,11 +217,97 @@ async def handle_survey_response(update: Update,
                   f"{survey_answers}"),
             reply_markup=reply_markup)
     else:
-        # Ask next question
+        # Check if the next question is "How do you know about SISC?"
+        if SURVEY_QUESTIONS[user_data.current_question] == "How do you know about SISC?":
+            # Show inline keyboard with options
+            keyboard = [[
+                InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
+                InlineKeyboardButton("Newsletter", callback_data="Newsletter")
+            ], [
+                InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
+                InlineKeyboardButton("Referral", callback_data="Referral")
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            db.update_user(user_data)
+            await update.message.reply_text(
+                f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
+                reply_markup=reply_markup
+            )
+        else:
+            # Ask next question normally
+            db.update_user(user_data)
+            await update.message.reply_text(
+                f"Question {user_data.current_question + 1}: "
+                f"{SURVEY_QUESTIONS[user_data.current_question]}")
+
+
+async def handle_survey_option_selection(update: Update,
+                                         context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle survey option selection from inline keyboard."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    user_data = db.get_user(user_id)
+
+    if not user_data or user_data.state != UserState.IN_SURVEY:
+        return
+
+    # Get the selected option
+    selected_option = query.data
+
+    # Find the question index for "How do you know about SISC?"
+    sisc_question_index = 5  # Index 5 in SURVEY_QUESTIONS
+
+    # Save the selected option as the answer to "How do you know about SISC?"
+    user_data.answers[SURVEY_QUESTIONS[sisc_question_index]] = selected_option
+    user_data.current_question += 1
+
+    # Check if "Referral" was selected
+    if selected_option == "Referral":
+        # Ask the referral question
         db.update_user(user_data)
-        await update.message.reply_text(
-            f"Question {user_data.current_question + 1}: "
-            f"{SURVEY_QUESTIONS[user_data.current_question]}")
+        await query.edit_message_text(
+            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}"
+        )
+    else:
+        # Skip the referral question and complete the survey
+        # Move to the question after "Who is your referral?"
+        user_data.current_question += 1
+
+        # Check if survey is complete
+        if user_data.current_question >= len(SURVEY_QUESTIONS):
+            user_data.state = UserState.PENDING_APPROVAL
+            db.update_user(user_data)
+
+            # Notify user
+            await query.edit_message_text(
+                "Thank you for completing the survey! Your request has been sent to the admins for review."
+            )
+
+            # Notify admin group
+            survey_answers = "\n".join(f"{q}: {user_data.answers[q]}"
+                                       for q in SURVEY_QUESTIONS)
+
+            keyboard = [[
+                InlineKeyboardButton("Approve",
+                                     callback_data=f"approve_{user_id}"),
+                InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await context.bot.send_message(
+                chat_id=ADMIN_GROUP_ID,
+                text=(f"New join request from {user_data.username or user_id}:\n\n"
+                      f"{survey_answers}"),
+                reply_markup=reply_markup)
+        else:
+            # Ask next question
+            db.update_user(user_data)
+            await query.edit_message_text(
+                f"Question {user_data.current_question + 1}: "
+                f"{SURVEY_QUESTIONS[user_data.current_question]}")
 
 
 async def handle_admin_decision(update: Update,
@@ -1116,7 +1220,8 @@ def main() -> None:
                        filters=admin_group_filter))
 
     # Add message handlers
-    application.add_handler(CallbackQueryHandler(handle_admin_decision))
+    application.add_handler(CallbackQueryHandler(handle_admin_decision, pattern=r'^(approve|reject)_'))
+    application.add_handler(CallbackQueryHandler(handle_survey_option_selection))
 
     # Handler for rejection reasons - only in admin group and must be a reply
     application.add_handler(

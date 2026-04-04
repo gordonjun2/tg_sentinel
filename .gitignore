@@ -218,3 +218,6 @@ credentials.json
 audios/
 discussion_insights/
 transcriptions/
+
+# AI
+.trae

@@ -22,10 +22,9 @@ async def test_bot():
             question=
             "Hi Super-Individuals!\nWhich topic would you like to explore in our next session? (multi-select)",
             options=[
-                "🎮 AI & Gaming",
-                "🧼 AI & Money Laundering",
-                "🧸 AI & Toy", 
-                "🌍 AI & Universal Basic Income (UBI)",
+                "🫧 AI & OBE (Out-of-Body Experience)",
+                "💋 AI & Beauty", 
+                "🧸 AI & Toy",
                 "Others (please let us know)"
             ],
             is_anonymous=False,  # Make poll non-anonymous

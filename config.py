@@ -62,7 +62,9 @@ SURVEY_QUESTIONS = [
     "What's your name?", "Which company are you currently with?",
     "What is your current role or job title?",
     "Please share your LinkedIn profile.",
-    "What's one AI tool you use regularly, and why do you find it valuable?"
+    "What's one AI tool you use regularly, and why do you find it valuable?",
+    "How do you know about SISC?",
+    "Who is your referral?"
 ]
 
 # File size limits (in bytes)
