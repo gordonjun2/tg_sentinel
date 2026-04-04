@@ -278,18 +278,12 @@ async def handle_survey_option_selection(update: Update,
 
     # Check if "Referral" was selected
     if selected_option == "Referral":
-        # Show confirmation and ask the referral question with back button
-        keyboard = [[
-            InlineKeyboardButton("← Back", callback_data="survey_back")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
+        # Show confirmation and ask the referral question (without back button)
         db.update_user(user_data)
-        # Send new message instead of editing
+        # Send new message without keyboard
         await query.message.reply_text(
             f"You selected: Referral\n\n"
-            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
-            reply_markup=reply_markup
+            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}"
         )
     else:
         # Send new message with confirmation
@@ -334,54 +328,6 @@ async def handle_survey_option_selection(update: Update,
                 text=(f"New join request from {user_data.username or user_id}:\n\n"
                       f"{survey_answers}"),
                 reply_markup=reply_markup)
-
-
-async def handle_survey_back_navigation(update: Update,
-                                    context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle back navigation from Question 7 to Question 6."""
-    query = update.callback_query
-    await query.answer()
-
-    # Remove buttons from the original message
-    await query.edit_message_reply_markup(reply_markup=None)
-
-    user_id = update.effective_user.id
-    user_data = db.get_user(user_id)
-
-    if not user_data or user_data.state != UserState.IN_SURVEY:
-        return
-
-    # Check if user is on Question 7 ("Who is your referral?")
-    referral_question_index = 6  # Index 6 in SURVEY_QUESTIONS
-    
-    if user_data.current_question != referral_question_index:
-        return
-
-    # Navigate back to Question 6
-    sisc_question_index = 5  # Index 5 in SURVEY_QUESTIONS
-    user_data.current_question = sisc_question_index
-
-    # Clear the referral answer if it exists
-    referral_question = SURVEY_QUESTIONS[referral_question_index]
-    if referral_question in user_data.answers:
-        del user_data.answers[referral_question]
-
-    # Show the options again for Question 6
-    keyboard = [[
-        InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
-        InlineKeyboardButton("Newsletter", callback_data="Newsletter")
-    ], [
-        InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
-        InlineKeyboardButton("Referral", callback_data="Referral")
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    db.update_user(user_data)
-    # Send new message instead of editing
-    await query.message.reply_text(
-        f"Question {sisc_question_index + 1}: {SURVEY_QUESTIONS[sisc_question_index]}",
-        reply_markup=reply_markup
-    )
 
 
 async def handle_admin_decision(update: Update,
@@ -1327,7 +1273,7 @@ def main() -> None:
 
     # Add message handlers
     application.add_handler(CallbackQueryHandler(handle_admin_decision, pattern=r'^(approve|reject)_'))
-    application.add_handler(CallbackQueryHandler(handle_survey_back_navigation, pattern=r'^survey_back$'))
+    # application.add_handler(CallbackQueryHandler(handle_survey_back_navigation, pattern=r'^survey_back$'))
     application.add_handler(CallbackQueryHandler(handle_survey_option_selection))
 
     # Handler for rejection reasons - only in admin group and must be a reply
