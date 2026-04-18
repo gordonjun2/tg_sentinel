@@ -1,12 +1,14 @@
 import logging
 import csv
+import random
 from io import StringIO
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from telegram.ext import (Application, CommandHandler, MessageHandler,
                           CallbackQueryHandler, ContextTypes, filters)
 from telegram.constants import ParseMode
 from config import (BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID,
-                    SURVEY_QUESTIONS, GOOGLE_DRIVE_MAIN_FOLDER_ID,
+                    SURVEY_QUESTIONS, WELCOME_MESSAGES,
+                    GOOGLE_DRIVE_MAIN_FOLDER_ID,
                     GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
                     GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID,
                     TELEGRAM_API_KEY, TELEGRAM_HASH, MAX_AUDIO_FILE_SIZE)
@@ -70,6 +72,36 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
             raise telegram.error.BadRequest(
                 "Bot needs admin rights to manage invite links")
         raise e
+
+
+async def announce_new_member(update: Update,
+                               context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat.id != TARGET_GROUP_ID:
+        return
+    if not update.message or not update.message.new_chat_members:
+        return
+
+    bot_id = context.bot.id
+    members = [u for u in update.message.new_chat_members if u.id != bot_id]
+    if not members:
+        return
+
+    mentions = []
+    for u in members:
+        if u.username:
+            mentions.append(f"@{u.username}")
+        else:
+            mentions.append(f"[{u.full_name}](tg://user?id={u.id})")
+
+    if len(mentions) == 1:
+        names = mentions[0]
+    elif len(mentions) == 2:
+        names = f"{mentions[0]} and {mentions[1]}"
+    else:
+        names = ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
+
+    text = random.choice(WELCOME_MESSAGES).format(names=names)
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1270,6 +1302,12 @@ def main() -> None:
         CommandHandler("check_transcription_status",
                        check_transcription_status_command,
                        filters=admin_group_filter))
+
+    application.add_handler(
+        MessageHandler(
+            filters.Chat(chat_id=TARGET_GROUP_ID)
+            & filters.StatusUpdate.NEW_CHAT_MEMBERS,
+            announce_new_member))
 
     # Add message handlers
     application.add_handler(CallbackQueryHandler(handle_admin_decision, pattern=r'^(approve|reject)_'))
