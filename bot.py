@@ -8,6 +8,7 @@ from telegram.ext import (Application, CommandHandler, MessageHandler,
 from telegram.constants import ParseMode
 from config import (BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID,
                     SURVEY_QUESTIONS, WELCOME_MESSAGES,
+                    WELCOME_BATCH_INTERVAL_MINUTES,
                     GOOGLE_DRIVE_MAIN_FOLDER_ID,
                     GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
                     GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID,
@@ -74,6 +75,9 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
         raise e
 
 
+_pending_members = []
+
+
 async def announce_new_member(update: Update,
                                context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat.id != TARGET_GROUP_ID:
@@ -86,22 +90,46 @@ async def announce_new_member(update: Update,
     if not members:
         return
 
-    mentions = []
-    for u in members:
-        if u.username:
-            mentions.append(f"@{u.username}")
+    _pending_members.extend(members)
+
+
+async def _batch_announce_loop(bot) -> None:
+    interval = WELCOME_BATCH_INTERVAL_MINUTES
+    while True:
+        now = datetime.now(timezone.utc)
+        minutes = now.minute % interval
+        seconds = now.second
+        wait = (interval - 1 - minutes) * 60 + (60 - seconds)
+        await asyncio.sleep(wait)
+
+        if not _pending_members:
+            continue
+
+        members = _pending_members[:]
+        _pending_members.clear()
+
+        mentions = []
+        for u in members:
+            if u.username:
+                mentions.append(f"@{u.username}")
+            else:
+                mentions.append(f"[{u.full_name}](tg://user?id={u.id})")
+
+        if len(mentions) == 1:
+            names = mentions[0]
+        elif len(mentions) == 2:
+            names = f"{mentions[0]} and {mentions[1]}"
         else:
-            mentions.append(f"[{u.full_name}](tg://user?id={u.id})")
+            names = ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
 
-    if len(mentions) == 1:
-        names = mentions[0]
-    elif len(mentions) == 2:
-        names = f"{mentions[0]} and {mentions[1]}"
-    else:
-        names = ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
-
-    text = random.choice(WELCOME_MESSAGES).format(names=names)
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        text = random.choice(WELCOME_MESSAGES).format(names=names)
+        try:
+            await bot.send_message(
+                chat_id=TARGET_GROUP_ID,
+                text=text,
+                parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            logger.error(f"Failed to send batch announcement: {e}")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1269,8 +1297,10 @@ def main() -> None:
                 for command, description in user_commands
             ],
             scope=BotCommandScopeAllPrivateChats(
-            )  # Only show in private chats
+        )  # Only show in private chats
         )
+
+        asyncio.create_task(_batch_announce_loop(app.bot))
 
     # Add post init callback
     application.post_init = post_init
