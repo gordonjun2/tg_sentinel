@@ -30,6 +30,14 @@ logging.basicConfig(
     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+INTRO_TEXT = (
+    "👋 Welcome to the *Super-Individual Secret Club*!\n"
+    " We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.\n\n"
+    "To keep this circle intentional, we ask a few quick questions before letting you in.\n"
+    "🧠 It won't take long — just helps us make sure the right people are in the room.\n\n"
+    "🌐 Learn more about us: https://www.sisc.club/"
+)
+
 # Initialize transcriber
 transcriber = AudioTranscriber()
 
@@ -150,12 +158,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
         if member.status not in ['left', 'kicked', 'banned']:
-            # Get chat info to get the link
+            await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
+
             chat = await context.bot.get_chat(TARGET_GROUP_ID)
-            if chat.username:  # Public group with username
+            if chat.username:
                 group_link = f"https://t.me/{chat.username}"
-            else:  # Private group
-                group_link = chat.invite_link  # This is the permanent invite link of the group, not a temporary one
+            else:
+                group_link = chat.invite_link
 
             await update.message.reply_text(
                 f"You are already a member of the group! Click here to open the chat: {group_link}"
@@ -166,6 +175,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
 
     if user_data.state == UserState.APPROVED:
+        await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
         try:
             # Revoke old links and generate new one
             invite_link = await revoke_and_create_invite_link(
@@ -190,6 +200,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if user_data.state == UserState.PENDING_APPROVAL:
+        await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
         await update.message.reply_text(
             "Your request is pending approval. Please wait for admin review.")
         return
@@ -200,12 +211,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data.answers = {}
     db.update_user(user_data)
 
+    await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
     await update.message.reply_text(
-        "👋 Welcome to the *Super-Individual Secret Club*!\n"
-        "🎯We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.\n\n"
-        "To keep this circle intentional, we ask a few quick questions before letting you in.\n"
-        "🧠 It won't take long — just helps us make sure the right people are in the room.\n"
-        "👇 Let's begin:\n\n"
         f"Question 1: {SURVEY_QUESTIONS[0]}",
         parse_mode=ParseMode.MARKDOWN)
 
