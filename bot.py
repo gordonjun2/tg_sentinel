@@ -4,7 +4,7 @@ import random
 from io import StringIO
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from telegram.ext import (Application, CommandHandler, MessageHandler,
-                          CallbackQueryHandler, ContextTypes, filters)
+                          CallbackQueryHandler, ChatMemberHandler, ContextTypes, filters)
 from telegram.constants import ParseMode
 from config import (BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID,
                     SURVEY_QUESTIONS, WELCOME_MESSAGES,
@@ -99,6 +99,29 @@ async def announce_new_member(update: Update,
         return
 
     _pending_members.extend(members)
+
+
+async def handle_chat_member_update(update: Update,
+                                     context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat.id != TARGET_GROUP_ID:
+        return
+    if not update.chat_member:
+        return
+
+    new_status = update.chat_member.new_chat_member.status
+    old_status = update.chat_member.old_chat_member.status
+
+    joining_statuses = {'member', 'administrator', 'owner'}
+    if new_status not in joining_statuses:
+        return
+    if old_status in joining_statuses:
+        return
+
+    user = update.chat_member.new_chat_member.user
+    if user.id == context.bot.id:
+        return
+
+    _pending_members.append(user)
 
 
 async def _batch_announce_loop(bot) -> None:
@@ -1345,6 +1368,10 @@ def main() -> None:
             filters.Chat(chat_id=TARGET_GROUP_ID)
             & filters.StatusUpdate.NEW_CHAT_MEMBERS,
             announce_new_member))
+    application.add_handler(
+        ChatMemberHandler(
+            handle_chat_member_update,
+            chat_member_types=ChatMemberHandler.CHAT_MEMBER))
 
     # Add message handlers
     application.add_handler(CallbackQueryHandler(handle_admin_decision, pattern=r'^(approve|reject)_'))
