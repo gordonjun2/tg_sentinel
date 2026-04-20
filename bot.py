@@ -84,7 +84,6 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
 
 
 _pending_members = []
-_batch_announce_task = None
 
 
 async def announce_new_member(update: Update,
@@ -1342,21 +1341,10 @@ def main() -> None:
         )  # Only show in private chats
         )
 
-        global _batch_announce_task
-        _batch_announce_task = asyncio.create_task(_batch_announce_loop(app.bot))
-
-    async def post_shutdown(app: Application) -> None:
-        global _batch_announce_task
-        if _batch_announce_task and not _batch_announce_task.done():
-            _batch_announce_task.cancel()
-            try:
-                await _batch_announce_task
-            except asyncio.CancelledError:
-                pass
+        app.create_task(_batch_announce_loop(app.bot))
 
     # Add post init callback
     application.post_init = post_init
-    application.post_shutdown = post_shutdown
 
     # Create command filters
     private_chat_filter = filters.ChatType.PRIVATE
