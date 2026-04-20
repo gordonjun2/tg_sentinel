@@ -84,6 +84,7 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
 
 
 _pending_members = []
+_batch_announce_task = None
 
 
 async def announce_new_member(update: Update,
@@ -126,41 +127,52 @@ async def handle_chat_member_update(update: Update,
 
 async def _batch_announce_loop(bot) -> None:
     interval = WELCOME_BATCH_INTERVAL_MINUTES
-    while True:
-        now = datetime.now(timezone.utc)
-        minutes = now.minute % interval
-        seconds = now.second
-        wait = (interval - 1 - minutes) * 60 + (60 - seconds)
-        await asyncio.sleep(wait)
+    try:
+        while True:
+            now = datetime.now(timezone.utc)
+            minutes = now.minute % interval
+            seconds = now.second
+            wait = (interval - 1 - minutes) * 60 + (60 - seconds)
+            await asyncio.sleep(wait)
 
-        if not _pending_members:
-            continue
+            if not _pending_members:
+                continue
 
-        members = _pending_members[:]
-        _pending_members.clear()
+            members = _pending_members[:]
+            _pending_members.clear()
 
-        mentions = []
-        for u in members:
-            if u.username:
-                mentions.append(f"@{u.username}")
+            seen = set()
+            mentions = []
+            for u in members:
+                key = u.username or u.id
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                if u.username:
+                    escaped = u.username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+                    mentions.append(f"@{escaped}")
+                else:
+                    escaped = u.full_name.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+                    mentions.append(f"[{escaped}](tg://user?id={u.id})")
+
+            if len(mentions) == 1:
+                names = mentions[0]
+            elif len(mentions) == 2:
+                names = f"{mentions[0]} and {mentions[1]}"
             else:
-                mentions.append(f"[{u.full_name}](tg://user?id={u.id})")
+                names = ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
 
-        if len(mentions) == 1:
-            names = mentions[0]
-        elif len(mentions) == 2:
-            names = f"{mentions[0]} and {mentions[1]}"
-        else:
-            names = ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
-
-        text = random.choice(WELCOME_MESSAGES).format(names=names)
-        try:
-            await bot.send_message(
-                chat_id=TARGET_GROUP_ID,
-                text=text,
-                parse_mode=ParseMode.MARKDOWN)
-        except Exception as e:
-            logger.error(f"Failed to send batch announcement: {e}")
+            text = random.choice(WELCOME_MESSAGES).format(names=names)
+            try:
+                await bot.send_message(
+                    chat_id=TARGET_GROUP_ID,
+                    text=text,
+                    parse_mode=ParseMode.MARKDOWN)
+            except Exception as e:
+                logger.error(f"Failed to send batch announcement: {e}")
+    except asyncio.CancelledError:
+        pass
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1330,10 +1342,21 @@ def main() -> None:
         )  # Only show in private chats
         )
 
-        asyncio.create_task(_batch_announce_loop(app.bot))
+        global _batch_announce_task
+        _batch_announce_task = asyncio.create_task(_batch_announce_loop(app.bot))
+
+    async def post_shutdown(app: Application) -> None:
+        global _batch_announce_task
+        if _batch_announce_task and not _batch_announce_task.done():
+            _batch_announce_task.cancel()
+            try:
+                await _batch_announce_task
+            except asyncio.CancelledError:
+                pass
 
     # Add post init callback
     application.post_init = post_init
+    application.post_shutdown = post_shutdown
 
     # Create command filters
     private_chat_filter = filters.ChatType.PRIVATE
