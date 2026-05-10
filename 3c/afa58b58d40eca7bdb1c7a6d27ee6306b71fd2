@@ -1,0 +1,21 @@
+requirements.txt
+  s_3fd9a07207714b::t_fc5b44384356a4 17
+audio_transcribe.py
+  s_3fd9a07207714b::t_0b7151d06ddebc 10,13-21,41-43,55-57,77-79,111,130-132,145-148,155,180,186,191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "3cafa58b58d40eca7bdb1c7a6d27ee6306b71fd2",
+  "prompts": {},
+  "sessions": {
+    "s_3fd9a07207714b": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1ed5d3b71ffeObjss9FcQqR3Jl",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
