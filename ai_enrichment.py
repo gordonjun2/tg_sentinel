@@ -11,6 +11,8 @@ from ddgs import DDGS
 from google import genai
 from google.genai import types
 from openai import OpenAI
+from pydantic import BaseModel, Field
+import instructor
 
 from config import (
     GEMINI_API_KEY,
@@ -426,6 +428,116 @@ def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
     return False
 
 
+class PollEvaluation(BaseModel):
+    should_create_poll: bool
+    question: Optional[str] = None
+    options: Optional[list[str]] = Field(default=None, min_length=2, max_length=5)
+    allows_multiple_answers: Optional[bool] = None
+
+
+POLL_EVALUATION_SYSTEM_PROMPT = """You are a community engagement assistant for a high-signal tech/AI/startup community called SISC (Super-Individual Secret Club).
+
+Given a group conversation, its topic, and some retrieved context, decide whether this topic would spark fun, engaging discussion via a poll.
+
+A GOOD poll candidate:
+- The topic has clear alternatives, choices, or opinions people would enjoy weighing in on
+- The question can be phrased in a fun, casual, or light-hearted way
+- It invites community participation and gets people talking
+- Examples: "Which tool do you actually use?", "What's your take on X?", "If you could only pick one...", "Which trend are you betting on?"
+
+A BAD poll candidate:
+- Topics that are purely factual with no opinion angle
+- Topics too niche or technical for most people to have a take on
+- Topics where all options would be essentially the same
+- The conversation was just casual chatter with no substantive angle
+
+TONE: Keep it fun, light-hearted, and community-friendly. The question should feel like a friend asking, not a survey. Use casual phrasing. Feel free to be playful.
+
+RULES:
+- Provide 2-4 options (DO NOT include "Others" — it will be added automatically)
+- Each option should be short (under 8 words ideally)
+- For "pick one" or "which is best" questions, set allows_multiple_answers to false
+- For "which ones interest you" or "select all that apply" questions, set allows_multiple_answers to true
+- Be CONSERVATIVE — roughly only 30% of topics should get a poll. When in doubt, set should_create_poll to false.
+- If should_create_poll is false, leave question, options, and allows_multiple_answers as null."""
+
+
+def evaluate_poll_opportunity(
+    context_text: str, topic: str, retrieved_context: str
+) -> Optional[PollEvaluation]:
+    user_message = f"""<conversation>
+{context_text}
+</conversation>
+
+<topic>{topic}</topic>
+
+<retrieved_context>
+{retrieved_context[:4000]}
+</retrieved_context>
+
+Based on the conversation and context above, would this topic make for a fun, engaging poll?"""
+
+    try:
+        client = instructor.from_provider(f"google/{GEMINI_ENRICHMENT_MODEL}")
+        result = client.create(
+            response_model=PollEvaluation,
+            messages=[
+                {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            max_retries=2,
+        )
+        logger.info(
+            "[Enrichment] evaluate_poll_opportunity succeeded via Gemini (instructor)"
+        )
+        return result
+    except Exception as e:
+        logger.warning(f"[Enrichment] Gemini poll evaluation failed: {e}")
+
+    if OPENAI_API_KEY:
+        try:
+            client = instructor.from_provider(f"openai/{OPENAI_ENRICHMENT_MODEL}")
+            result = client.create(
+                response_model=PollEvaluation,
+                messages=[
+                    {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+                max_retries=2,
+            )
+            logger.info(
+                "[Enrichment] evaluate_poll_opportunity succeeded via OpenAI (instructor fallback)"
+            )
+            return result
+        except Exception as e:
+            logger.error(
+                f"[Enrichment] OpenAI poll evaluation fallback also failed: {e}"
+            )
+
+    return None
+
+
+async def send_discussion_poll(
+    bot, chat_id: int, question: str, options: list[str], allows_multiple_answers: bool
+) -> None:
+    poll_options = list(options)
+    poll_options.append("Others (drop in chat!)")
+    try:
+        await bot.send_poll(
+            chat_id=chat_id,
+            question=question,
+            options=poll_options,
+            is_anonymous=False,
+            allows_multiple_answers=allows_multiple_answers,
+            disable_notification=True,
+        )
+        logger.info(
+            f"[Enrichment] Poll sent: '{question}' with {len(poll_options)} options (multi={allows_multiple_answers})"
+        )
+    except Exception as e:
+        logger.error(f"[Enrichment] Failed to send poll: {e}")
+
+
 async def process_enrichment(message_data: dict, bot) -> None:
     state = db.get_enrichment_state()
     if not state["is_enabled"]:
@@ -596,20 +708,40 @@ async def process_enrichment(message_data: dict, bot) -> None:
         else:
             raise
 
-        last_msg = context_window[-1]
-        buffer.mark_processed_up_to(last_msg["message_id"])
+    last_msg = context_window[-1]
+    buffer.mark_processed_up_to(last_msg["message_id"])
 
-        db.record_enrichment_reply(
-            [msg["message_id"] for msg in context_window],
-            content_hash,
-            topic,
-            sent_message.message_id,
+    db.record_enrichment_reply(
+        [msg["message_id"] for msg in context_window],
+        content_hash,
+        topic,
+        sent_message.message_id,
+    )
+    db.update_enrichment_state(last_processed_message_id=last_msg["message_id"])
+
+    logger.info(
+        f"[Enrichment] Reply sent (msg_id={sent_message.message_id}) for topic: '{topic}'"
+    )
+
+    try:
+        poll_result = await loop.run_in_executor(
+            None, evaluate_poll_opportunity, context_text, topic, retrieved_context
         )
-        db.update_enrichment_state(last_processed_message_id=last_msg["message_id"])
-
-        logger.info(
-            f"[Enrichment] Reply sent (msg_id={sent_message.message_id}) for topic: '{topic}'"
-        )
-
+        if (
+            poll_result
+            and poll_result.should_create_poll
+            and poll_result.question
+            and poll_result.options
+        ):
+            await send_discussion_poll(
+                bot,
+                message_data["chat_id"],
+                poll_result.question,
+                poll_result.options,
+                poll_result.allows_multiple_answers or False,
+            )
+            logger.info(f"[Enrichment] Poll created for topic: '{topic}'")
+        else:
+            logger.info(f"[Enrichment] No poll created for topic: '{topic}'")
     except Exception as e:
-        logger.error(f"[Enrichment] Failed to send reply: {e}")
+        logger.error(f"[Enrichment] Poll evaluation/sending failed: {e}")

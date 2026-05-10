@@ -21,3 +21,4 @@ ddgs
 trafilatura
 firecrawl-py
 openai
+instructor[google-genai]
