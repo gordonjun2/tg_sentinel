@@ -13,7 +13,9 @@ openai-whisper
 google-genai
 markdown
 weasyprint
-langchain
+langchain>=1.2.18
+langgraph>=1.1.10
+langgraph-prebuilt>=1.0.13
 python-docx
 pyrogram
 tgcrypto
