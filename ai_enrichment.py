@@ -6,8 +6,9 @@ from typing import Optional
 import asyncio
 
 import trafilatura
-from duckduckgo_search import DDGS
-from firecrawl import FirecrawlApp
+from ddgs import DDGS
+from firecrawl import V1FirecrawlApp
+from firecrawl.v1.client import V1ScrapeOptions
 from google import genai
 from google.genai import types
 
@@ -138,16 +139,24 @@ def fetch_url_content(url: str) -> Optional[str]:
 
 def search_web_firecrawl(query: str, max_results: int = 5) -> list:
     try:
-        app = FirecrawlApp(api_key=FIRECRAWL_API_KEY)
-        results = app.search(query, limit=max_results)
+        app = V1FirecrawlApp(api_key=FIRECRAWL_API_KEY)
+        response = app.search(
+            query,
+            limit=max_results,
+            scrape_options=V1ScrapeOptions(formats=[{"type": "markdown"}]),
+        )
         search_results = []
-        data = results.get("data", results if isinstance(results, list) else [])
-        for r in data:
+        web_results = []
+        if hasattr(response, "data") and isinstance(response.data, dict):
+            web_results = response.data.get("web", [])
+        elif hasattr(response, "data") and isinstance(response.data, list):
+            web_results = response.data
+        for r in web_results:
             search_results.append(
                 {
-                    "title": r.get("title", r.get("metadata", {}).get("title", "")),
-                    "url": r.get("url", r.get("metadata", {}).get("sourceURL", "")),
-                    "content": r.get("markdown", r.get("content", ""))[:3000],
+                    "title": getattr(r, "title", "") or "",
+                    "url": getattr(r, "url", "") or "",
+                    "content": (getattr(r, "markdown", "") or "")[:3000],
                 }
             )
         return search_results

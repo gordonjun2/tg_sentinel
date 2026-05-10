@@ -17,6 +17,6 @@ langchain
 python-docx
 pyrogram
 tgcrypto
-duckduckgo-search
+ddgs
 trafilatura
 firecrawl-py
