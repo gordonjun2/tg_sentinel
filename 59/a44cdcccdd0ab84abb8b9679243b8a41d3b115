@@ -1,0 +1,19 @@
+requirements.txt
+  s_3fd9a07207714b::t_3aa475387c3bb2 16-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "59a44cdcccdd0ab84abb8b9679243b8a41d3b115",
+  "prompts": {},
+  "sessions": {
+    "s_3fd9a07207714b": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1ed5d3b71ffeObjss9FcQqR3Jl",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
