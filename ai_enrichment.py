@@ -28,25 +28,35 @@ WORTHINESS_SYSTEM_PROMPT = """You are a conversation classifier for a high-signa
 
 You will receive the last N messages from a Telegram group conversation. Your job is to determine whether this conversation would benefit from additional context enrichment.
 
-A conversation is WORTHY of enrichment if ANY of these apply:
-1. A URL was shared that points to a meaningful article, paper, or resource about technology, AI, startups, economics, geopolitics, science, or emerging trends.
-2. Users are discussing a technical topic, new technology, newsworthy event, or industry development that would benefit from factual context or background information.
-3. The discussion touches on macro trends, industry analysis, or specialized knowledge where additional facts/context would improve understanding.
+A conversation is WORTHY of enrichment ONLY if it meets ALL of these conditions:
+- There is substantive discussion (not just a topic mention), AND
+- External context would meaningfully improve understanding, AND
+- The topic is specific enough to enrich with factual information
 
-A conversation is NOT worthy if:
+Specific worthy examples:
+1. A URL was shared that points to a meaningful article, paper, or resource about technology, AI, startups, economics, geopolitics, science, or emerging trends.
+2. Users are having a multi-turn technical discussion where specific facts, data, or background would add value.
+3. The discussion touches on a concrete newsworthy event or industry development with clear factual dimensions.
+
+A conversation is NOT worthy if ANY of these apply:
 - It's casual chatting, jokes, greetings, or social planning
 - The discussion is already self-contained and doesn't need external context
 - It's opinions without factual grounding needed
 - Short reactions or acknowledgments
 - Event logistics (meetups, scheduling)
 - The topic is too vague or underspecified to enrich meaningfully
+- Single-sentence topic mentions with no depth, follow-up questions, or specifics (e.g. "explain quantum computing")
+- Topic drops without a question, request, or substantive discussion
+- Messages that just name a topic in under ~10 words total without elaboration
+
+Be CONSERVATIVE. When in doubt, classify as not_worthy. A false negative (missing a worthy topic) is far less harmful than a false positive (enriching trivial chatter).
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {"should_reply": true/false, "confidence": 0.0-1.0, "reason": "url_shared" | "technical_discussion" | "macro_trends" | "not_worthy", "topic": "brief topic description", "search_queries": ["query1", "query2"]}
 
 If a URL is present, set reason to "url_shared" and include the URL topic in search_queries.
-If no URL but technical/newsworthy, set reason to "technical_discussion" or "macro_trends" and provide 2-3 specific search queries.
-If not worthy, set reason to "not_worthy", confidence below 0.5, topic to "", and search_queries to []."""
+If no URL but technical/newsworthy with substantive depth, set reason to "technical_discussion" or "macro_trends" and provide 2-3 specific search queries.
+If not worthy, set reason to "not_worthy", confidence below 0.4, topic to "", and search_queries to []."""
 
 ENRICHMENT_REPLY_SYSTEM_PROMPT = """You are a concise context-enrichment assistant for a high-signal tech community.
 
@@ -339,6 +349,59 @@ Based on the conversation and the retrieved context, write a concise enrichment 
     return None
 
 
+_MD_V2_SPECIAL = set("_*[]()~`>#+-=|{}.!\\")
+
+
+def _escape_md_v2(text: str) -> str:
+    escaped = []
+    for ch in text:
+        if ch in _MD_V2_SPECIAL:
+            escaped.append("\\")
+        escaped.append(ch)
+    return "".join(escaped)
+
+
+_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
+_BULLET_RE = re.compile(r"^[\s]*[•\-]\s*", re.MULTILINE)
+_SOURCE_HEADER_RE = re.compile(r"^Sources:\s*$", re.MULTILINE)
+
+
+def format_reply_for_telegram(raw_reply: str) -> str:
+    source_match = _SOURCE_HEADER_RE.search(raw_reply)
+    if source_match:
+        body = raw_reply[: source_match.start()].strip()
+        sources_section = raw_reply[source_match.end() :].strip()
+    else:
+        body = raw_reply.strip()
+        sources_section = ""
+
+    body = _escape_md_v2(body)
+
+    if sources_section:
+        lines = sources_section.split("\n")
+        formatted_sources = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            line = _BULLET_RE.sub("", line)
+            link_match = _LINK_RE.search(line)
+            if link_match:
+                link_text = _escape_md_v2(link_match.group(1))
+                link_url = link_match.group(2)
+                formatted_sources.append(f"  \\- [{link_text}]({link_url})")
+            else:
+                formatted_sources.append(f"  \\- {_escape_md_v2(line)}")
+        sources_block = "\\-\\-\\-\n*Sources*:\n" + "\n".join(formatted_sources)
+    else:
+        sources_block = ""
+
+    parts = [body]
+    if sources_block:
+        parts.append(sources_block)
+    return "\n\n".join(parts)
+
+
 def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
     if not topic or not recent_topics:
         return False
@@ -390,6 +453,25 @@ async def process_enrichment(message_data: dict, bot) -> None:
             f"[Enrichment]   msg_id={msg['message_id']} from={sender}: {snippet}"
         )
 
+    total_text = " ".join(
+        msg.get("text", "") for msg in context_window if msg.get("text")
+    )
+    total_words = len(total_text.split())
+    has_url = any(
+        extract_urls(msg.get("text", "")) for msg in context_window if msg.get("text")
+    )
+    if total_words < 20 and not has_url:
+        logger.info(
+            f"[Enrichment] Skipping: insufficient substance ({total_words} words, no URL). Threshold: 20 words."
+        )
+        db.record_processed_window(
+            [msg["message_id"] for msg in context_window],
+            content_hash,
+            False,
+            "insufficient_substance",
+        )
+        return
+
     loop = asyncio.get_running_loop()
 
     classification = await loop.run_in_executor(None, classify_worthiness, context_text)
@@ -411,9 +493,10 @@ async def process_enrichment(message_data: dict, bot) -> None:
         reason,
     )
 
-    if not should_reply or confidence < 0.6:
+    min_confidence = 0.6 if reason == "url_shared" else 0.8
+    if not should_reply or confidence < min_confidence:
         logger.info(
-            f"[Enrichment] Not worthy (confidence={confidence:.2f} < 0.6 or should_reply={should_reply}). Skipping."
+            f"[Enrichment] Not worthy (confidence={confidence:.2f} < {min_confidence} for reason={reason} or should_reply={should_reply}). Skipping."
         )
         return
 
@@ -483,16 +566,21 @@ async def process_enrichment(message_data: dict, bot) -> None:
     )
 
     try:
+        formatted_text = format_reply_for_telegram(reply_text)
         sent_message = await bot.send_message(
             chat_id=message_data["chat_id"],
-            text=reply_text,
-            parse_mode="Markdown",
+            text=formatted_text,
+            parse_mode="MarkdownV2",
             disable_notification=True,
         )
     except Exception as e:
-        if "parse entities" in str(e).lower() or "Can't parse" in str(e):
+        if (
+            "parse entities" in str(e).lower()
+            or "Can't parse" in str(e)
+            or "can't be parsed" in str(e).lower()
+        ):
             logger.warning(
-                f"[Enrichment] Markdown parse failed, retrying as plain text: {e}"
+                f"[Enrichment] MarkdownV2 parse failed, retrying as plain text: {e}"
             )
             sent_message = await bot.send_message(
                 chat_id=message_data["chat_id"],
