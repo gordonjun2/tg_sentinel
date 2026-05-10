@@ -206,7 +206,6 @@ def _classify_worthiness_openai(context_text: str) -> dict:
         model=OPENAI_ENRICHMENT_MODEL,
         instructions=WORTHINESS_SYSTEM_PROMPT,
         input=context_text,
-        temperature=0.1,
     )
     raw = response.output_text.strip()
     if raw.startswith("```"):
@@ -232,7 +231,6 @@ Based on the conversation and the retrieved context, write a concise enrichment 
         model=OPENAI_ENRICHMENT_MODEL,
         instructions=ENRICHMENT_REPLY_SYSTEM_PROMPT,
         input=prompt,
-        temperature=0.3,
     )
     reply = response.output_text.strip()
     if reply == "NO_REPLY" or not reply:
