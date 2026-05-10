@@ -54,7 +54,7 @@ Rules:
 - Do NOT ask follow-up questions
 - Do NOT give opinions or say "I think"
 - Keep it under 6 sentences unless the topic genuinely requires more
-- Cite sources inline when using web search results
+- When citing sources, you MUST include the full URL as a hyperlink. Format: [source name](URL). Example: [TechCrunch](https://techcrunch.com/2026/01/example). NEVER use parenthetical source names like (TechCrunch) — always include the actual URL.
 - Do NOT repeat what was already said in the conversation
 - Write in a neutral, informative tone
 - If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
@@ -127,7 +127,6 @@ def fetch_url_content(url: str) -> Optional[str]:
             include_comments=False,
             include_tables=True,
             favor_precision=True,
-            max_tree_size=50000,
         )
         if content and len(content) > 500:
             return content[:8000]
@@ -143,7 +142,7 @@ def search_web_firecrawl(query: str, max_results: int = 5) -> list:
         response = app.search(
             query,
             limit=max_results,
-            scrape_options=V1ScrapeOptions(formats=[{"type": "markdown"}]),
+            scrape_options=V1ScrapeOptions(formats=["markdown"]),
         )
         search_results = []
         web_results = []
@@ -350,6 +349,7 @@ async def process_enrichment(message_data: dict, bot) -> None:
         sent_message = await bot.send_message(
             chat_id=message_data["chat_id"],
             text=reply_text,
+            parse_mode="Markdown",
             disable_notification=True,
         )
 
