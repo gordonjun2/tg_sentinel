@@ -54,7 +54,9 @@ Rules:
 - Do NOT ask follow-up questions
 - Do NOT give opinions or say "I think"
 - Keep it under 6 sentences unless the topic genuinely requires more
-- When citing sources, you MUST include the full URL as a hyperlink. Format: [source name](URL). Example: [TechCrunch](https://techcrunch.com/2026/01/example). NEVER use parenthetical source names like (TechCrunch) — always include the actual URL.
+- Place source citations INLINE within the relevant sentence, not appended at the end of the paragraph. Example: "According to [TechCrunch](https://...), AI demand is rising due to cloud spending."
+- NEVER dump all citations at the end of the reply. Each citation belongs next to the claim it supports.
+- Use ONLY markdown link format: [short name](URL). NEVER show raw URLs or use "Name (url)" format.
 - Do NOT repeat what was already said in the conversation
 - Write in a neutral, informative tone
 - If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
@@ -282,9 +284,22 @@ async def process_enrichment(message_data: dict, bot) -> None:
     content_hash = compute_content_hash(context_window)
 
     if db.is_content_hash_processed(content_hash):
+        logger.info(
+            f"[Enrichment] Skipping already processed window hash={content_hash[:12]}... msgs={[m['message_id'] for m in context_window]}"
+        )
         return
 
     context_text = serialize_messages(context_window)
+
+    logger.info(
+        f"[Enrichment] Evaluating window ({len(context_window)} msgs, hash={content_hash[:12]}...)"
+    )
+    for msg in context_window:
+        sender = msg.get("username") or msg.get("first_name") or "Unknown"
+        snippet = (msg.get("text") or "")[:80]
+        logger.info(
+            f"[Enrichment]   msg_id={msg['message_id']} from={sender}: {snippet}"
+        )
 
     loop = asyncio.get_running_loop()
 
@@ -296,6 +311,10 @@ async def process_enrichment(message_data: dict, bot) -> None:
     topic = classification.get("topic", "")
     search_queries = classification.get("search_queries", [])
 
+    logger.info(
+        f"[Enrichment] Classification: should_reply={should_reply}, confidence={confidence:.2f}, reason={reason}, topic='{topic}', search_queries={search_queries}"
+    )
+
     db.record_processed_window(
         [msg["message_id"] for msg in context_window],
         content_hash,
@@ -304,11 +323,16 @@ async def process_enrichment(message_data: dict, bot) -> None:
     )
 
     if not should_reply or confidence < 0.6:
+        logger.info(
+            f"[Enrichment] Not worthy (confidence={confidence:.2f} < 0.6 or should_reply={should_reply}). Skipping."
+        )
         return
 
     recent_topics = db.get_recent_reply_topics(limit=10)
     if is_semantically_duplicate(topic, recent_topics):
-        logger.info(f"Skipping duplicate topic: {topic}")
+        logger.info(
+            f"[Enrichment] Skipping duplicate topic: '{topic}' (matched against recent {len(recent_topics)} topics)"
+        )
         return
 
     retrieved_context = ""
@@ -318,15 +342,25 @@ async def process_enrichment(message_data: dict, bot) -> None:
             urls.extend(extract_urls(msg["text"]))
 
     if urls and reason == "url_shared":
+        logger.info(
+            f"[Enrichment] URL enrichment: fetching {len(urls[:2])} urls: {urls[:2]}"
+        )
         for url in urls[:2]:
             content = await loop.run_in_executor(None, fetch_url_content, url)
             if content:
                 retrieved_context += f"\n\n--- Content from {url} ---\n{content}"
+                logger.info(f"[Enrichment]   Fetched {len(content)} chars from {url}")
+            else:
+                logger.info(f"[Enrichment]   No content extracted from {url}")
     elif search_queries:
+        logger.info(
+            f"[Enrichment] Web search enrichment: {len(search_queries[:3])} queries: {search_queries[:3]}"
+        )
         all_results = []
         for query in search_queries[:3]:
             results = await loop.run_in_executor(None, search_web, query, 3)
             all_results.extend(results)
+            logger.info(f"[Enrichment]   Query '{query}': {len(results)} results")
             await asyncio.sleep(1)
 
         seen_urls = set()
@@ -336,14 +370,24 @@ async def process_enrichment(message_data: dict, bot) -> None:
                 retrieved_context += f"\n- {r['title']} ({r['url']}): {r['content']}\n"
 
     if not retrieved_context:
+        logger.info("[Enrichment] No context retrieved. Skipping reply.")
         return
+
+    logger.info(
+        f"[Enrichment] Retrieved {len(retrieved_context)} chars of context. Generating reply..."
+    )
 
     reply_text = await loop.run_in_executor(
         None, generate_enrichment_reply, context_text, retrieved_context
     )
 
     if not reply_text:
+        logger.info("[Enrichment] Gemini returned NO_REPLY. Skipping.")
         return
+
+    logger.info(
+        f"[Enrichment] Reply generated ({len(reply_text)} chars): {reply_text[:120]}..."
+    )
 
     try:
         sent_message = await bot.send_message(
@@ -364,7 +408,9 @@ async def process_enrichment(message_data: dict, bot) -> None:
         )
         db.update_enrichment_state(last_processed_message_id=last_msg["message_id"])
 
-        logger.info(f"Enrichment reply sent for topic: {topic}")
+        logger.info(
+            f"[Enrichment] Reply sent (msg_id={sent_message.message_id}) for topic: '{topic}'"
+        )
 
     except Exception as e:
-        logger.error(f"Failed to send enrichment reply: {e}")
+        logger.error(f"[Enrichment] Failed to send reply: {e}")
