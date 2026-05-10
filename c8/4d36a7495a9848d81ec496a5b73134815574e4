@@ -1,0 +1,20 @@
+ai_enrichment.py
+  s_ef1855a8d23240::t_fa12d8ca25d616 205-208,211
+  s_ef1855a8d23240::t_9ac8e9eefaa50d 231-234,237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "c84d36a7495a9848d81ec496a5b73134815574e4",
+  "prompts": {},
+  "sessions": {
+    "s_ef1855a8d23240": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1edbd83ecffeeVxmQvpf1IUbBq",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
