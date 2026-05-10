@@ -54,9 +54,9 @@ Rules:
 - Do NOT ask follow-up questions
 - Do NOT give opinions or say "I think"
 - Keep it under 6 sentences unless the topic genuinely requires more
-- Place source citations INLINE within the relevant sentence, not appended at the end of the paragraph. Example: "According to [TechCrunch](https://...), AI demand is rising due to cloud spending."
-- NEVER dump all citations at the end of the reply. Each citation belongs next to the claim it supports.
-- Use ONLY markdown link format: [short name](URL). NEVER show raw URLs or use "Name (url)" format.
+- Do NOT cite sources inline within the text. Write the enrichment content cleanly without any links or source names in the body.
+- After the body text, add a blank line, then list sources. If 1 source: single "Sources:" line using markdown links. If multiple sources, use bullet points. Example with multiple: \nSources:\n• [name1](url1)\n• [name2](url2)
+- Each source URL should appear only ONCE in the sources line, never repeated.
 - Do NOT repeat what was already said in the conversation
 - Write in a neutral, informative tone
 - If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
@@ -296,7 +296,8 @@ async def process_enrichment(message_data: dict, bot) -> None:
     )
     for msg in context_window:
         sender = msg.get("username") or msg.get("first_name") or "Unknown"
-        snippet = (msg.get("text") or "")[:80]
+        text = msg.get("text") or ""
+        snippet = text[:100] + ("..." if len(text) > 100 else "")
         logger.info(
             f"[Enrichment]   msg_id={msg['message_id']} from={sender}: {snippet}"
         )
@@ -352,9 +353,10 @@ async def process_enrichment(message_data: dict, bot) -> None:
                 logger.info(f"[Enrichment]   Fetched {len(content)} chars from {url}")
             else:
                 logger.info(f"[Enrichment]   No content extracted from {url}")
-    elif search_queries:
+
+    if not retrieved_context and search_queries:
         logger.info(
-            f"[Enrichment] Web search enrichment: {len(search_queries[:3])} queries: {search_queries[:3]}"
+            f"[Enrichment] URL extraction empty, falling back to web search: {len(search_queries[:3])} queries: {search_queries[:3]}"
         )
         all_results = []
         for query in search_queries[:3]:
