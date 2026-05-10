@@ -202,15 +202,13 @@ if OPENAI_API_KEY:
 
 
 def _classify_worthiness_openai(context_text: str) -> dict:
-    response = openai_client.chat.completions.create(
-        model=GEMINI_ENRICHMENT_MODEL,
+    response = openai_client.responses.create(
+        model=OPENAI_ENRICHMENT_MODEL,
+        instructions=WORTHINESS_SYSTEM_PROMPT,
+        input=context_text,
         temperature=0.1,
-        messages=[
-            {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
-            {"role": "user", "content": context_text},
-        ],
     )
-    raw = response.choices[0].message.content.strip()
+    raw = response.output_text.strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```\w*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
@@ -230,15 +228,13 @@ def _generate_enrichment_reply_openai(
 
 Based on the conversation and the retrieved context, write a concise enrichment reply. If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
 
-    response = openai_client.chat.completions.create(
-        model=GEMINI_ENRICHMENT_MODEL,
+    response = openai_client.responses.create(
+        model=OPENAI_ENRICHMENT_MODEL,
+        instructions=ENRICHMENT_REPLY_SYSTEM_PROMPT,
+        input=prompt,
         temperature=0.3,
-        messages=[
-            {"role": "system", "content": ENRICHMENT_REPLY_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
     )
-    reply = response.choices[0].message.content.strip()
+    reply = response.output_text.strip()
     if reply == "NO_REPLY" or not reply:
         return None
     return reply
