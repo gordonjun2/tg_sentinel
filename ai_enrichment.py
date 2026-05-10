@@ -489,6 +489,18 @@ async def process_enrichment(message_data: dict, bot) -> None:
             parse_mode="Markdown",
             disable_notification=True,
         )
+    except Exception as e:
+        if "parse entities" in str(e).lower() or "Can't parse" in str(e):
+            logger.warning(
+                f"[Enrichment] Markdown parse failed, retrying as plain text: {e}"
+            )
+            sent_message = await bot.send_message(
+                chat_id=message_data["chat_id"],
+                text=reply_text,
+                disable_notification=True,
+            )
+        else:
+            raise
 
         last_msg = context_window[-1]
         buffer.mark_processed_up_to(last_msg["message_id"])
