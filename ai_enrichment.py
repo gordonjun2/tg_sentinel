@@ -19,7 +19,7 @@ from config import (
     GEMINI_ENRICHMENT_MODEL,
     FIRECRAWL_API_KEY,
     OPENAI_API_KEY,
-    GEMINI_ENRICHMENT_MODEL,
+    OPENAI_ENRICHMENT_MODEL,
 )
 from database import db
 
