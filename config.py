@@ -63,7 +63,9 @@ if not FIRECRAWL_API_KEY:
     raise ValueError("FIRECRAWL_API_KEY not found in environment variables")
 
 AI_CONTEXT_WINDOW = int(os.getenv("AI_CONTEXT_WINDOW", "3"))
-AI_ENRICHMENT_MODEL = os.getenv("AI_ENRICHMENT_MODEL", "gemini-2.5-flash")
+GEMINI_ENRICHMENT_MODEL = os.getenv("GEMINI_ENRICHMENT_MODEL", "gemini-2.5-flash")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_ENRICHMENT_MODEL = os.getenv("OPENAI_ENRICHMENT_MODEL", "gpt-5-mini")
 AI_ENRICHMENT_ENABLED_DEFAULT = (
     os.getenv("AI_ENRICHMENT_ENABLED_DEFAULT", "true").lower() == "true"
 )

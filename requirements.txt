@@ -20,3 +20,4 @@ tgcrypto
 ddgs
 trafilatura
 firecrawl-py
+openai

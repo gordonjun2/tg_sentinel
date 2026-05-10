@@ -11,12 +11,15 @@ from firecrawl import V1FirecrawlApp
 from firecrawl.v1.client import V1ScrapeOptions
 from google import genai
 from google.genai import types
+from openai import OpenAI
 
 from config import (
     GEMINI_API_KEY,
     AI_CONTEXT_WINDOW,
-    AI_ENRICHMENT_MODEL,
+    GEMINI_ENRICHMENT_MODEL,
     FIRECRAWL_API_KEY,
+    OPENAI_API_KEY,
+    GEMINI_ENRICHMENT_MODEL,
 )
 from database import db
 
@@ -193,11 +196,58 @@ def search_web(query: str, max_results: int = 5) -> list:
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
+openai_client = None
+if OPENAI_API_KEY:
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+def _classify_worthiness_openai(context_text: str) -> dict:
+    response = openai_client.chat.completions.create(
+        model=GEMINI_ENRICHMENT_MODEL,
+        temperature=0.1,
+        messages=[
+            {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
+            {"role": "user", "content": context_text},
+        ],
+    )
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```\w*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    return json.loads(raw)
+
+
+def _generate_enrichment_reply_openai(
+    context_text: str, retrieved_context: str
+) -> Optional[str]:
+    prompt = f"""<conversation>
+{context_text}
+</conversation>
+
+<retrieved_context>
+{retrieved_context}
+</retrieved_context>
+
+Based on the conversation and the retrieved context, write a concise enrichment reply. If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
+
+    response = openai_client.chat.completions.create(
+        model=GEMINI_ENRICHMENT_MODEL,
+        temperature=0.3,
+        messages=[
+            {"role": "system", "content": ENRICHMENT_REPLY_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    reply = response.choices[0].message.content.strip()
+    if reply == "NO_REPLY" or not reply:
+        return None
+    return reply
+
 
 def classify_worthiness(context_text: str) -> dict:
     try:
         response = gemini_client.models.generate_content(
-            model=AI_ENRICHMENT_MODEL,
+            model=GEMINI_ENRICHMENT_MODEL,
             config=types.GenerateContentConfig(
                 system_instruction=WORTHINESS_SYSTEM_PROMPT,
                 temperature=0.1,
@@ -208,23 +258,37 @@ def classify_worthiness(context_text: str) -> dict:
         if raw.startswith("```"):
             raw = re.sub(r"^```\w*\n?", "", raw)
             raw = re.sub(r"\n?```$", "", raw)
-        return json.loads(raw)
+        result = json.loads(raw)
+        logger.info("[Enrichment] classify_worthiness succeeded via Gemini")
+        return result
     except (json.JSONDecodeError, Exception) as e:
-        logger.error(f"Worthiness classification failed: {e}")
-        return {
-            "should_reply": False,
-            "confidence": 0.0,
-            "reason": "classification_error",
-            "topic": "",
-            "search_queries": [],
-        }
+        logger.warning(f"[Enrichment] Gemini classify_worthiness failed: {e}")
+
+    if openai_client:
+        try:
+            result = _classify_worthiness_openai(context_text)
+            logger.info(
+                "[Enrichment] classify_worthiness succeeded via OpenAI (fallback)"
+            )
+            return result
+        except Exception as e:
+            logger.error(
+                f"[Enrichment] OpenAI classify_worthiness fallback also failed: {e}"
+            )
+
+    return {
+        "should_reply": False,
+        "confidence": 0.0,
+        "reason": "classification_error",
+        "topic": "",
+        "search_queries": [],
+    }
 
 
 def generate_enrichment_reply(
     context_text: str, retrieved_context: str
 ) -> Optional[str]:
-    try:
-        prompt = f"""<conversation>
+    prompt = f"""<conversation>
 {context_text}
 </conversation>
 
@@ -234,8 +298,9 @@ def generate_enrichment_reply(
 
 Based on the conversation and the retrieved context, write a concise enrichment reply. If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
 
+    try:
         response = gemini_client.models.generate_content(
-            model=AI_ENRICHMENT_MODEL,
+            model=GEMINI_ENRICHMENT_MODEL,
             config=types.GenerateContentConfig(
                 system_instruction=ENRICHMENT_REPLY_SYSTEM_PROMPT,
                 temperature=0.3,
@@ -245,10 +310,25 @@ Based on the conversation and the retrieved context, write a concise enrichment 
         reply = response.text.strip()
         if reply == "NO_REPLY" or not reply:
             return None
+        logger.info("[Enrichment] generate_enrichment_reply succeeded via Gemini")
         return reply
     except Exception as e:
-        logger.error(f"Enrichment reply generation failed: {e}")
-        return None
+        logger.warning(f"[Enrichment] Gemini generate_enrichment_reply failed: {e}")
+
+    if openai_client:
+        try:
+            result = _generate_enrichment_reply_openai(context_text, retrieved_context)
+            if result:
+                logger.info(
+                    "[Enrichment] generate_enrichment_reply succeeded via OpenAI (fallback)"
+                )
+            return result
+        except Exception as e:
+            logger.error(
+                f"[Enrichment] OpenAI generate_enrichment_reply fallback also failed: {e}"
+            )
+
+    return None
 
 
 def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
@@ -384,7 +464,7 @@ async def process_enrichment(message_data: dict, bot) -> None:
     )
 
     if not reply_text:
-        logger.info("[Enrichment] Gemini returned NO_REPLY. Skipping.")
+        logger.info("[Enrichment] LLM returned NO_REPLY. Skipping.")
         return
 
     logger.info(
