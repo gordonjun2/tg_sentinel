@@ -5,10 +5,9 @@ import re
 from typing import Optional
 import asyncio
 
+import requests as http_requests
 import trafilatura
 from ddgs import DDGS
-from firecrawl import V1FirecrawlApp
-from firecrawl.v1.client import V1ScrapeOptions
 from google import genai
 from google.genai import types
 from openai import OpenAI
@@ -143,26 +142,41 @@ def fetch_url_content(url: str) -> Optional[str]:
 
 def search_web_firecrawl(query: str, max_results: int = 5) -> list:
     try:
-        app = V1FirecrawlApp(api_key=FIRECRAWL_API_KEY)
-        response = app.search(
-            query,
-            limit=max_results,
-            scrape_options=V1ScrapeOptions(formats=["markdown"]),
+        resp = http_requests.post(
+            "https://api.firecrawl.dev/v2/search",
+            headers={
+                "Authorization": f"Bearer {FIRECRAWL_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "query": query,
+                "limit": max_results,
+                "scrapeOptions": {
+                    "formats": ["markdown"],
+                    "onlyMainContent": True,
+                },
+            },
+            timeout=30,
         )
-        search_results = []
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
         web_results = []
-        if hasattr(response, "data") and isinstance(response.data, dict):
-            web_results = response.data.get("web", [])
-        elif hasattr(response, "data") and isinstance(response.data, list):
-            web_results = response.data
+        if isinstance(data, dict):
+            web_results = data.get("web", [])
+        elif isinstance(data, list):
+            web_results = data
+        search_results = []
         for r in web_results:
-            search_results.append(
-                {
-                    "title": getattr(r, "title", "") or "",
-                    "url": getattr(r, "url", "") or "",
-                    "content": (getattr(r, "markdown", "") or "")[:3000],
-                }
+            title = r.get("title", "")
+            url = r.get("url", "")
+            content = (r.get("markdown", "") or r.get("description", ""))[:3000]
+            search_results.append({"title": title, "url": url, "content": content})
+        has_content = any(r["content"] for r in search_results)
+        if not has_content:
+            logger.warning(
+                f"[Enrichment] Firecrawl returned {len(search_results)} results but all have empty content"
             )
+            return []
         return search_results
     except Exception as e:
         logger.error(f"Firecrawl search failed for '{query}': {e}")
@@ -443,6 +457,9 @@ async def process_enrichment(message_data: dict, bot) -> None:
         for r in all_results:
             if r["url"] not in seen_urls:
                 seen_urls.add(r["url"])
+                logger.info(
+                    f"[Enrichment]     Result: title='{r['title'][:80]}' url='{r['url'][:80]}' content_len={len(r['content'])} content_preview='{r['content'][:120]}'"
+                )
                 retrieved_context += f"\n- {r['title']} ({r['url']}): {r['content']}\n"
 
     if not retrieved_context:
