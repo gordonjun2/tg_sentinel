@@ -1,0 +1,33 @@
+config.py
+  s_ef1855a8d23240::t_7c3a170c8409cf 66
+  s_ef1855a8d23240::t_a8f771b30a527d 67-68
+requirements.txt
+  s_ef1855a8d23240::t_14ee780d56c0f2 22-23
+ai_enrichment.py
+  s_ef1855a8d23240::t_6e37ecec73e1ae 199-205,207-233,235-245
+  s_ef1855a8d23240::t_48911f09075f27 250,303
+  s_ef1855a8d23240::t_91252bfb7a9026 19
+  s_ef1855a8d23240::t_d1130657ffea21 291,301,313,316-331
+  s_ef1855a8d23240::t_089be365c535d3 14,21
+  s_ef1855a8d23240::t_30263f8221da30 261-263,265-285
+  s_ef1855a8d23240::t_507b775d6e016f 467
+.env.example
+  s_ef1855a8d23240::t_bce6d4b34c4316 11-12
+  s_ef1855a8d23240::t_0c2e81cba229a2 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "536bd1381bc90163a739b2b9f6e8a3f6f6ef0eea",
+  "prompts": {},
+  "sessions": {
+    "s_ef1855a8d23240": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1edbd83ecffeeVxmQvpf1IUbBq",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
