@@ -24,4 +24,5 @@ ddgs
 trafilatura
 firecrawl-py
 openai
-instructor[google-genai]>=1.7.0
+instructor>=1.7.0
+jsonref

@@ -51,14 +51,20 @@ A conversation is NOT worthy if ANY of these apply:
 - Topic drops without a question, request, or substantive discussion
 - Messages that just name a topic in under ~10 words total without elaboration
 
+URL HANDLING:
+- If URLs are present, a <url_previews> section will be provided with fetched content from those URLs.
+- Use the URL preview content to judge whether the URLs point to something genuinely enriching (articles, papers, announcements, detailed analyses) or low-value pages (raw transaction pages, blockchain explorers, profile pages, social media posts with no substance, etc.).
+- A URL alone is NOT enough to classify as worthy. The URL's content must actually point to substantive educational or informational material that would benefit from enrichment.
+
 Be CONSERVATIVE. When in doubt, classify as not_worthy. A false negative (missing a worthy topic) is far less harmful than a false positive (enriching trivial chatter).
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {"should_reply": true/false, "confidence": 0.0-1.0, "reason": "url_shared" | "technical_discussion" | "macro_trends" | "not_worthy", "topic": "brief topic description", "search_queries": ["query1", "query2"]}
 
-If a URL is present, set reason to "url_shared" and include the URL topic in search_queries.
+If a URL is present AND its content is genuinely enriching, set reason to "url_shared" and include the URL topic in search_queries.
 If no URL but technical/newsworthy with substantive depth, set reason to "technical_discussion" or "macro_trends" and provide 2-3 specific search queries.
-If not worthy, set reason to "not_worthy", confidence below 0.4, topic to "", and search_queries to []."""
+If URLs point to low-value content with no substantive discussion around them, set reason to "not_worthy".
+If not worthy for any reason, set reason to "not_worthy", confidence below 0.4, topic to "", and search_queries to []."""
 
 ENRICHMENT_REPLY_SYSTEM_PROMPT = """You are a concise context-enrichment assistant for a high-signal tech community.
 
@@ -470,21 +476,13 @@ RULES:
 
 
 def _create_gemini_instructor():
-    if hasattr(instructor, "from_provider"):
-        return instructor.from_provider(f"google/{GEMINI_ENRICHMENT_MODEL}")
-    if hasattr(instructor, "from_genai"):
-        return instructor.from_genai(gemini_client)
-    if hasattr(instructor, "from_google"):
-        return instructor.from_google(gemini_client)
-    return None
+    return instructor.from_genai(gemini_client, model=GEMINI_ENRICHMENT_MODEL)
 
 
 def _create_openai_instructor():
     if not openai_client:
         return None
-    if hasattr(instructor, "from_provider"):
-        return instructor.from_provider(f"openai/{OPENAI_ENRICHMENT_MODEL}")
-    return instructor.from_openai(openai_client)
+    return instructor.from_openai(openai_client, model=OPENAI_ENRICHMENT_MODEL)
 
 
 def evaluate_poll_opportunity(
@@ -616,7 +614,36 @@ async def process_enrichment(message_data: dict, bot) -> None:
 
     loop = asyncio.get_running_loop()
 
-    classification = await loop.run_in_executor(None, classify_worthiness, context_text)
+    urls = []
+    for msg in context_window:
+        if msg.get("text"):
+            urls.extend(extract_urls(msg["text"]))
+
+    url_previews = ""
+    if urls:
+        logger.info(
+            f"[Enrichment] Pre-fetching {len(urls[:2])} URLs before classification: {urls[:2]}"
+        )
+        for url in urls[:2]:
+            content = await loop.run_in_executor(None, fetch_url_content, url)
+            if content:
+                url_previews += f"\n\n--- Content from {url} ---\n{content}"
+                logger.info(
+                    f"[Enrichment]   Pre-fetched {len(content)} chars from {url}"
+                )
+            else:
+                logger.info(f"[Enrichment]   No content extracted from {url}")
+
+    if url_previews:
+        classification_input = (
+            f"{context_text}\n\n<url_previews>{url_previews}</url_previews>"
+        )
+    else:
+        classification_input = context_text
+
+    classification = await loop.run_in_executor(
+        None, classify_worthiness, classification_input
+    )
 
     should_reply = classification.get("should_reply", False)
     confidence = classification.get("confidence", 0.0)
@@ -635,7 +662,7 @@ async def process_enrichment(message_data: dict, bot) -> None:
         reason,
     )
 
-    min_confidence = 0.6 if reason == "url_shared" else 0.8
+    min_confidence = 0.75 if reason == "url_shared" else 0.8
     if not should_reply or confidence < min_confidence:
         logger.info(
             f"[Enrichment] Not worthy (confidence={confidence:.2f} < {min_confidence} for reason={reason} or should_reply={should_reply}). Skipping."
@@ -650,22 +677,10 @@ async def process_enrichment(message_data: dict, bot) -> None:
         return
 
     retrieved_context = ""
-    urls = []
-    for msg in context_window:
-        if msg.get("text"):
-            urls.extend(extract_urls(msg["text"]))
 
-    if urls and reason == "url_shared":
-        logger.info(
-            f"[Enrichment] URL enrichment: fetching {len(urls[:2])} urls: {urls[:2]}"
-        )
-        for url in urls[:2]:
-            content = await loop.run_in_executor(None, fetch_url_content, url)
-            if content:
-                retrieved_context += f"\n\n--- Content from {url} ---\n{content}"
-                logger.info(f"[Enrichment]   Fetched {len(content)} chars from {url}")
-            else:
-                logger.info(f"[Enrichment]   No content extracted from {url}")
+    if url_previews and reason == "url_shared":
+        logger.info("[Enrichment] Reusing pre-fetched URL content for enrichment")
+        retrieved_context = url_previews
 
     if not retrieved_context and search_queries:
         logger.info(
