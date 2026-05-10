@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from datetime import datetime, timezone
+from config import AI_ENRICHMENT_ENABLED_DEFAULT
 
 
 class UserState(Enum):
@@ -35,14 +36,13 @@ class UserData:
     current_question: int
     answers: Dict[str, str]
     join_datetime: datetime
-    invite_links: List[
-        str] = None  # List of invite link IDs given to this user
-    rejection_message_id: Optional[
-        int] = None  # Message ID for rejection reason request
+    invite_links: List[str] = None  # List of invite link IDs given to this user
+    rejection_message_id: Optional[int] = (
+        None  # Message ID for rejection reason request
+    )
 
 
 class Database:
-
     def __init__(self, db_path: str = "bot_data.db"):
         self.db_path = db_path
         self._init_db()
@@ -53,14 +53,14 @@ class Database:
             cursor = conn.cursor()
 
             # Create users table if not exists
-            cursor.execute('''
+            cursor.execute("""
                 SELECT name FROM sqlite_master WHERE type='table' AND name='users'
-            ''')
+            """)
             table_exists = cursor.fetchone() is not None
 
             if not table_exists:
                 # Create users table
-                cursor.execute('''
+                cursor.execute("""
                     CREATE TABLE users (
                         user_id INTEGER PRIMARY KEY,
                         username TEXT,
@@ -71,38 +71,38 @@ class Database:
                         invite_links TEXT,
                         rejection_message_id INTEGER
                     )
-                ''')
+                """)
             else:
                 # Check and add columns as before
-                cursor.execute('PRAGMA table_info(users)')
+                cursor.execute("PRAGMA table_info(users)")
                 columns = [col[1] for col in cursor.fetchall()]
-                if 'join_datetime' not in columns:
-                    cursor.execute('''
+                if "join_datetime" not in columns:
+                    cursor.execute("""
                         ALTER TABLE users 
                         ADD COLUMN join_datetime TEXT 
                         DEFAULT CURRENT_TIMESTAMP
-                    ''')
-                if 'invite_links' not in columns:
-                    cursor.execute('''
+                    """)
+                if "invite_links" not in columns:
+                    cursor.execute("""
                         ALTER TABLE users 
                         ADD COLUMN invite_links TEXT 
                         DEFAULT '[]'
-                    ''')
-                if 'rejection_message_id' not in columns:
-                    cursor.execute('''
+                    """)
+                if "rejection_message_id" not in columns:
+                    cursor.execute("""
                         ALTER TABLE users 
                         ADD COLUMN rejection_message_id INTEGER 
                         DEFAULT NULL
-                    ''')
+                    """)
 
             # Create transcription_status table if not exists
-            cursor.execute('''
+            cursor.execute("""
                 SELECT name FROM sqlite_master WHERE type='table' AND name='transcription_status'
-            ''')
+            """)
             table_exists = cursor.fetchone() is not None
 
             if not table_exists:
-                cursor.execute('''
+                cursor.execute("""
                     CREATE TABLE transcription_status (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         file_path TEXT,
@@ -113,29 +113,97 @@ class Database:
                         is_fully_completed BOOLEAN,
                         error TEXT
                     )
-                ''')
+                """)
             else:
                 # Check if is_extracting_insights column exists
-                cursor.execute('PRAGMA table_info(transcription_status)')
+                cursor.execute("PRAGMA table_info(transcription_status)")
                 columns = [col[1] for col in cursor.fetchall()]
-                if 'is_extracting_insights' not in columns:
-                    cursor.execute('''
+                if "is_extracting_insights" not in columns:
+                    cursor.execute("""
                         ALTER TABLE transcription_status 
                         ADD COLUMN is_extracting_insights BOOLEAN 
                         DEFAULT 0
-                    ''')
-                if 'is_fully_completed' not in columns:
-                    cursor.execute('''
+                    """)
+                if "is_fully_completed" not in columns:
+                    cursor.execute("""
                         ALTER TABLE transcription_status 
                         ADD COLUMN is_fully_completed BOOLEAN 
                         DEFAULT 0
-                    ''')
+                    """)
+
+            cursor.execute("""
+                SELECT name FROM sqlite_master WHERE type='table' AND name='enrichment_state'
+            """)
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                cursor.execute("""
+                    CREATE TABLE enrichment_state (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        last_processed_message_id INTEGER,
+                        is_enabled BOOLEAN DEFAULT 1,
+                        updated_at TEXT
+                    )
+                """)
+                cursor.execute(
+                    """
+                    INSERT INTO enrichment_state (last_processed_message_id, is_enabled, updated_at)
+                    VALUES (0, ?, ?)
+                """,
+                    (
+                        AI_ENRICHMENT_ENABLED_DEFAULT,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+
+            cursor.execute("""
+                SELECT name FROM sqlite_master WHERE type='table' AND name='enrichment_replies'
+            """)
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                cursor.execute("""
+                    CREATE TABLE enrichment_replies (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        message_ids TEXT NOT NULL,
+                        content_hash TEXT NOT NULL,
+                        topic TEXT,
+                        reply_message_id INTEGER,
+                        created_at TEXT NOT NULL
+                    )
+                """)
+
+            cursor.execute("""
+                SELECT name FROM sqlite_master WHERE type='table' AND name='enrichment_processed_windows'
+            """)
+            table_exists = cursor.fetchone() is not None
+
+            if not table_exists:
+                cursor.execute("""
+                    CREATE TABLE enrichment_processed_windows (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        message_ids TEXT NOT NULL,
+                        content_hash TEXT NOT NULL,
+                        evaluated_at TEXT NOT NULL,
+                        should_reply BOOLEAN NOT NULL,
+                        reason TEXT
+                    )
+                """)
 
             conn.commit()
 
     def _user_data_from_row(self, row: tuple) -> UserData:
         """Convert a database row to UserData object."""
-        user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id = row
+        (
+            user_id,
+            username,
+            state,
+            current_question,
+            answers,
+            join_datetime,
+            invite_links,
+            rejection_message_id,
+        ) = row
         return UserData(
             user_id=user_id,
             username=username,
@@ -143,39 +211,51 @@ class Database:
             current_question=current_question,
             answers=json.loads(answers) if answers else {},
             join_datetime=datetime.fromisoformat(join_datetime)
-            if join_datetime else datetime.now(timezone.utc),
+            if join_datetime
+            else datetime.now(timezone.utc),
             invite_links=json.loads(invite_links) if invite_links else [],
-            rejection_message_id=rejection_message_id)
+            rejection_message_id=rejection_message_id,
+        )
 
     def get_user(self, user_id: int) -> Optional[UserData]:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users WHERE user_id = ?',
-                (user_id, ))
+                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users WHERE user_id = ?",
+                (user_id,),
+            )
             row = cursor.fetchone()
             return self._user_data_from_row(row) if row else None
 
     def create_user(self, user_id: int, username: Optional[str]) -> UserData:
-        user = UserData(user_id=user_id,
-                        username=username,
-                        state=UserState.IDLE,
-                        current_question=0,
-                        answers={},
-                        join_datetime=datetime.now(timezone.utc),
-                        invite_links=[],
-                        rejection_message_id=None)
+        user = UserData(
+            user_id=user_id,
+            username=username,
+            state=UserState.IDLE,
+            current_question=0,
+            answers={},
+            join_datetime=datetime.now(timezone.utc),
+            invite_links=[],
+            rejection_message_id=None,
+        )
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 INSERT INTO users (user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (user.user_id, user.username, user.state.value,
-                 user.current_question, json.dumps(user.answers),
-                 user.join_datetime.isoformat(), json.dumps(
-                     user.invite_links), user.rejection_message_id))
+                """,
+                (
+                    user.user_id,
+                    user.username,
+                    user.state.value,
+                    user.current_question,
+                    json.dumps(user.answers),
+                    user.join_datetime.isoformat(),
+                    json.dumps(user.invite_links),
+                    user.rejection_message_id,
+                ),
+            )
             conn.commit()
         return user
 
@@ -183,27 +263,35 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 UPDATE users
                 SET username = ?, state = ?, current_question = ?, answers = ?, join_datetime = ?, invite_links = ?, rejection_message_id = ?
                 WHERE user_id = ?
-                ''',
-                (user_data.username, user_data.state.value,
-                 user_data.current_question, json.dumps(
-                     user_data.answers), user_data.join_datetime.isoformat(),
-                 json.dumps(user_data.invite_links),
-                 user_data.rejection_message_id, user_data.user_id))
+                """,
+                (
+                    user_data.username,
+                    user_data.state.value,
+                    user_data.current_question,
+                    json.dumps(user_data.answers),
+                    user_data.join_datetime.isoformat(),
+                    json.dumps(user_data.invite_links),
+                    user_data.rejection_message_id,
+                    user_data.user_id,
+                ),
+            )
             conn.commit()
 
     def get_pending_requests(self) -> List[UserData]:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id
                 FROM users
                 WHERE state = ?
-                ''', (UserState.PENDING_APPROVAL.value, ))
+                """,
+                (UserState.PENDING_APPROVAL.value,),
+            )
             return [self._user_data_from_row(row) for row in cursor.fetchall()]
 
     def get_all_users(self) -> List[UserData]:
@@ -211,7 +299,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users'
+                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users"
             )
             return [self._user_data_from_row(row) for row in cursor.fetchall()]
 
@@ -224,10 +312,12 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                     DELETE FROM users
                     WHERE state = ?
-                    ''', (UserState.PENDING_APPROVAL.value, ))
+                    """,
+                (UserState.PENDING_APPROVAL.value,),
+            )
             deleted_count = cursor.rowcount
             conn.commit()
             return deleted_count
@@ -236,17 +326,25 @@ class Database:
         """Get the currently active transcription if any."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute("""
                 SELECT file_path, percentage, start_time, is_completed, is_extracting_insights, is_fully_completed, error
                 FROM transcription_status
                 WHERE is_fully_completed = 0 AND error IS NULL
                 ORDER BY start_time DESC
                 LIMIT 1
-            ''')
+            """)
             row = cursor.fetchone()
 
             if row:
-                file_path, percentage, start_time, is_completed, is_extracting_insights, is_fully_completed, error = row
+                (
+                    file_path,
+                    percentage,
+                    start_time,
+                    is_completed,
+                    is_extracting_insights,
+                    is_fully_completed,
+                    error,
+                ) = row
                 return TranscriptionStatus(
                     file_path=file_path,
                     percentage=percentage,
@@ -254,7 +352,8 @@ class Database:
                     is_completed=bool(is_completed),
                     is_extracting_insights=bool(is_extracting_insights),
                     is_fully_completed=bool(is_fully_completed),
-                    error=error)
+                    error=error,
+                )
             return None
 
     def start_transcription(self, file_path: str) -> None:
@@ -262,11 +361,20 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 INSERT INTO transcription_status (file_path, percentage, start_time, is_completed, is_extracting_insights, is_fully_completed, error)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (file_path, 0.0, datetime.now(
-                    timezone.utc).isoformat(), False, False, False, None))
+            """,
+                (
+                    file_path,
+                    0.0,
+                    datetime.now(timezone.utc).isoformat(),
+                    False,
+                    False,
+                    False,
+                    None,
+                ),
+            )
             conn.commit()
 
     def start_insight_extraction(self, file_path: str) -> None:
@@ -274,7 +382,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 UPDATE transcription_status
                 SET is_extracting_insights = 1
                 WHERE id = (
@@ -282,7 +390,9 @@ class Database:
                     WHERE file_path = ? AND is_fully_completed = 0 
                     ORDER BY start_time DESC LIMIT 1
                 )
-            ''', (file_path, ))
+            """,
+                (file_path,),
+            )
             conn.commit()
 
     def complete_insight_extraction(self, file_path: str) -> None:
@@ -290,7 +400,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 UPDATE transcription_status
                 SET is_fully_completed = 1
                 WHERE id = (
@@ -298,16 +408,17 @@ class Database:
                     WHERE file_path = ? AND is_fully_completed = 0 
                     ORDER BY start_time DESC LIMIT 1
                 )
-            ''', (file_path, ))
+            """,
+                (file_path,),
+            )
             conn.commit()
 
-    def update_transcription_progress(self, file_path: str,
-                                      percentage: float) -> None:
+    def update_transcription_progress(self, file_path: str, percentage: float) -> None:
         """Update the progress of a transcription."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 UPDATE transcription_status
                 SET percentage = ?
                 WHERE id = (
@@ -315,17 +426,19 @@ class Database:
                     WHERE file_path = ? AND is_fully_completed = 0 
                     ORDER BY start_time DESC LIMIT 1
                 )
-            ''', (percentage, file_path))
+            """,
+                (percentage, file_path),
+            )
             conn.commit()
 
-    def complete_transcription(self,
-                               file_path: str,
-                               error: Optional[str] = None) -> None:
+    def complete_transcription(
+        self, file_path: str, error: Optional[str] = None
+    ) -> None:
         """Mark a transcription as complete."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''
+                """
                 UPDATE transcription_status
                 SET is_completed = 1, error = ?
                 WHERE id = (
@@ -333,8 +446,98 @@ class Database:
                     WHERE file_path = ? AND is_fully_completed = 0 
                     ORDER BY start_time DESC LIMIT 1
                 )
-            ''', (error, file_path))
+            """,
+                (error, file_path),
+            )
             conn.commit()
+
+    def get_enrichment_state(self) -> dict:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT last_processed_message_id, is_enabled FROM enrichment_state ORDER BY id DESC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "last_processed_message_id": row[0],
+                    "is_enabled": bool(row[1]),
+                }
+            return {"last_processed_message_id": 0, "is_enabled": True}
+
+    def update_enrichment_state(
+        self, last_processed_message_id: int = None, is_enabled: bool = None
+    ) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            updates = []
+            params = []
+            if last_processed_message_id is not None:
+                updates.append("last_processed_message_id = ?")
+                params.append(last_processed_message_id)
+            if is_enabled is not None:
+                updates.append("is_enabled = ?")
+                params.append(is_enabled)
+            updates.append("updated_at = ?")
+            params.append(datetime.now(timezone.utc).isoformat())
+            params.append(1)
+            cursor.execute(
+                f"UPDATE enrichment_state SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            conn.commit()
+
+    def record_enrichment_reply(
+        self, message_ids: list, content_hash: str, topic: str, reply_message_id: int
+    ) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO enrichment_replies (message_ids, content_hash, topic, reply_message_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                (
+                    json.dumps(message_ids),
+                    content_hash,
+                    topic,
+                    reply_message_id,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def is_content_hash_processed(self, content_hash: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM enrichment_processed_windows WHERE content_hash = ? UNION SELECT id FROM enrichment_replies WHERE content_hash = ? LIMIT 1",
+                (content_hash, content_hash),
+            )
+            return cursor.fetchone() is not None
+
+    def record_processed_window(
+        self, message_ids: list, content_hash: str, should_reply: bool, reason: str
+    ) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO enrichment_processed_windows (message_ids, content_hash, evaluated_at, should_reply, reason) VALUES (?, ?, ?, ?, ?)",
+                (
+                    json.dumps(message_ids),
+                    content_hash,
+                    datetime.now(timezone.utc).isoformat(),
+                    should_reply,
+                    reason,
+                ),
+            )
+            conn.commit()
+
+    def get_recent_reply_topics(self, limit: int = 10) -> list:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT topic, content_hash, created_at FROM enrichment_replies ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+            return cursor.fetchall()
 
 
 # Ensure the data directory exists

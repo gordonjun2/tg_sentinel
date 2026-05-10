@@ -2,17 +2,38 @@ import logging
 import csv
 import random
 from io import StringIO
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat, BotCommandScopeAllPrivateChats
-from telegram.ext import (Application, CommandHandler, MessageHandler,
-                          CallbackQueryHandler, ChatMemberHandler, ContextTypes, filters)
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    BotCommand,
+    BotCommandScopeChat,
+    BotCommandScopeAllPrivateChats,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ChatMemberHandler,
+    ContextTypes,
+    filters,
+)
 from telegram.constants import ParseMode
-from config import (BOT_TOKEN, ADMIN_GROUP_ID, TARGET_GROUP_ID,
-                    SURVEY_QUESTIONS, WELCOME_MESSAGES,
-                    WELCOME_BATCH_INTERVAL_MINUTES,
-                    GOOGLE_DRIVE_MAIN_FOLDER_ID,
-                    GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
-                    GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID,
-                    TELEGRAM_API_KEY, TELEGRAM_HASH, MAX_AUDIO_FILE_SIZE)
+from config import (
+    BOT_TOKEN,
+    ADMIN_GROUP_ID,
+    TARGET_GROUP_ID,
+    SURVEY_QUESTIONS,
+    WELCOME_MESSAGES,
+    WELCOME_BATCH_INTERVAL_MINUTES,
+    GOOGLE_DRIVE_MAIN_FOLDER_ID,
+    GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
+    GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID,
+    TELEGRAM_API_KEY,
+    TELEGRAM_HASH,
+    MAX_AUDIO_FILE_SIZE,
+)
 from database import db, UserState, UserData
 import telegram
 import pytz
@@ -23,11 +44,12 @@ from audio_transcribe import AudioTranscriber
 import os
 import time
 from pyrogram import Client, utils
+from ai_enrichment import process_enrichment, buffer
 
 # Enable logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO)
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 INTRO_TEXT = (
@@ -68,8 +90,9 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
                 continue
 
         # Create new invite link with member limit of 1
-        new_link = await bot.create_chat_invite_link(chat_id=TARGET_GROUP_ID,
-                                                     member_limit=1)
+        new_link = await bot.create_chat_invite_link(
+            chat_id=TARGET_GROUP_ID, member_limit=1
+        )
 
         # Update user's invite links
         user_data.invite_links = [new_link.invite_link]
@@ -79,15 +102,17 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
     except telegram.error.BadRequest as e:
         if "rights to manage chat invite link" in str(e).lower():
             raise telegram.error.BadRequest(
-                "Bot needs admin rights to manage invite links")
+                "Bot needs admin rights to manage invite links"
+            )
         raise e
 
 
 _pending_members = []
 
 
-async def announce_new_member(update: Update,
-                               context: ContextTypes.DEFAULT_TYPE) -> None:
+async def announce_new_member(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if update.effective_chat.id != TARGET_GROUP_ID:
         return
     if not update.message or not update.message.new_chat_members:
@@ -101,8 +126,9 @@ async def announce_new_member(update: Update,
     _pending_members.extend(members)
 
 
-async def handle_chat_member_update(update: Update,
-                                     context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_chat_member_update(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if update.effective_chat.id != TARGET_GROUP_ID:
         return
     if not update.chat_member:
@@ -111,7 +137,7 @@ async def handle_chat_member_update(update: Update,
     new_status = update.chat_member.new_chat_member.status
     old_status = update.chat_member.old_chat_member.status
 
-    joining_statuses = {'member', 'administrator', 'owner'}
+    joining_statuses = {"member", "administrator", "owner"}
     if new_status not in joining_statuses:
         return
     if old_status in joining_statuses:
@@ -149,10 +175,20 @@ async def _batch_announce_loop(bot) -> None:
                 seen.add(key)
 
                 if u.username:
-                    escaped = u.username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+                    escaped = (
+                        u.username.replace("_", "\\_")
+                        .replace("*", "\\*")
+                        .replace("[", "\\[")
+                        .replace("`", "\\`")
+                    )
                     mentions.append(f"@{escaped}")
                 else:
-                    escaped = u.full_name.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+                    escaped = (
+                        u.full_name.replace("_", "\\_")
+                        .replace("*", "\\*")
+                        .replace("[", "\\[")
+                        .replace("`", "\\`")
+                    )
                     mentions.append(f"[{escaped}](tg://user?id={u.id})")
 
             if len(mentions) == 1:
@@ -165,9 +201,8 @@ async def _batch_announce_loop(bot) -> None:
             text = random.choice(WELCOME_MESSAGES).format(names=names)
             try:
                 await bot.send_message(
-                    chat_id=TARGET_GROUP_ID,
-                    text=text,
-                    parse_mode=ParseMode.MARKDOWN)
+                    chat_id=TARGET_GROUP_ID, text=text, parse_mode=ParseMode.MARKDOWN
+                )
             except Exception as e:
                 logger.error(f"Failed to send batch announcement: {e}")
     except asyncio.CancelledError:
@@ -191,7 +226,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Check if user is already in target group
     try:
         member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
-        if member.status not in ['left', 'kicked', 'banned']:
+        if member.status not in ["left", "kicked", "banned"]:
             await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
 
             chat = await context.bot.get_chat(TARGET_GROUP_ID)
@@ -212,8 +247,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
         try:
             # Revoke old links and generate new one
-            invite_link = await revoke_and_create_invite_link(
-                context.bot, user_data)
+            invite_link = await revoke_and_create_invite_link(context.bot, user_data)
             await update.message.reply_text(
                 f"You were already approved! Here's a new invite link to join: {invite_link}"
             )
@@ -225,9 +259,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 # Notify admins about the missing permission and the pending user
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
-                    text=
-                    f"⚠️ Cannot create invite link for approved user {username or user_id} because bot "
-                    f"needs admin rights in the target group. Please make the bot an admin or help the user join manually."
+                    text=f"⚠️ Cannot create invite link for approved user {username or user_id} because bot "
+                    f"needs admin rights in the target group. Please make the bot an admin or help the user join manually.",
                 )
             else:
                 raise e
@@ -236,7 +269,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if user_data.state == UserState.PENDING_APPROVAL:
         await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
         await update.message.reply_text(
-            "Your request is pending approval. Please wait for admin review.")
+            "Your request is pending approval. Please wait for admin review."
+        )
         return
 
     # Start the survey
@@ -247,12 +281,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
     await update.message.reply_text(
-        f"Question 1: {SURVEY_QUESTIONS[0]}",
-        parse_mode=ParseMode.MARKDOWN)
+        f"Question 1: {SURVEY_QUESTIONS[0]}", parse_mode=ParseMode.MARKDOWN
+    )
 
 
-async def handle_survey_response(update: Update,
-                                 context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_survey_response(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle survey responses."""
     user_id = update.effective_user.id
     user_data = db.get_user(user_id)
@@ -270,19 +305,22 @@ async def handle_survey_response(update: Update,
 
     # Check if current question is "How do you know about SISC?" - user should use buttons
     if SURVEY_QUESTIONS[user_data.current_question] == "How do you know about SISC?":
-        keyboard = [[
-            InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
-            InlineKeyboardButton("Newsletter", callback_data="Newsletter")
-        ], [
-            InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
-            InlineKeyboardButton("Referral", callback_data="Referral")
-        ]]
+        keyboard = [
+            [
+                InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
+                InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
+            ],
+            [
+                InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
+                InlineKeyboardButton("Referral", callback_data="Referral"),
+            ],
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
             f"Please select an option from the buttons below:\n\n"
             f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
         )
         return
 
@@ -314,46 +352,60 @@ async def handle_survey_response(update: Update,
 
         survey_answers = "\n".join(answers_text)
 
-        keyboard = [[
-            InlineKeyboardButton("Approve",
-                                 callback_data=f"approve_{user_id}"),
-            InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")
-        ]]
+        keyboard = [
+            [
+                InlineKeyboardButton("Approve", callback_data=f"approve_{user_id}"),
+                InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}"),
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await context.bot.send_message(
             chat_id=ADMIN_GROUP_ID,
-            text=(f"New join request from {user_data.username or user_id}:\n\n"
-                  f"{survey_answers}"),
-            reply_markup=reply_markup)
+            text=(
+                f"New join request from {user_data.username or user_id}:\n\n"
+                f"{survey_answers}"
+            ),
+            reply_markup=reply_markup,
+        )
     else:
         # Check if the next question is "How do you know about SISC?"
-        if SURVEY_QUESTIONS[user_data.current_question] == "How do you know about SISC?":
+        if (
+            SURVEY_QUESTIONS[user_data.current_question]
+            == "How do you know about SISC?"
+        ):
             # Show inline keyboard with options
-            keyboard = [[
-                InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
-                InlineKeyboardButton("Newsletter", callback_data="Newsletter")
-            ], [
-                InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
-                InlineKeyboardButton("Referral", callback_data="Referral")
-            ]]
+            keyboard = [
+                [
+                    InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
+                    InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "Physical Event", callback_data="Physical Event"
+                    ),
+                    InlineKeyboardButton("Referral", callback_data="Referral"),
+                ],
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             db.update_user(user_data)
             await update.message.reply_text(
                 f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
             )
         else:
             # Ask next question normally
             db.update_user(user_data)
             await update.message.reply_text(
                 f"Question {user_data.current_question + 1}: "
-                f"{SURVEY_QUESTIONS[user_data.current_question]}")
+                f"{SURVEY_QUESTIONS[user_data.current_question]}"
+            )
 
 
-async def handle_survey_option_selection(update: Update,
-                                         context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_survey_option_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle survey option selection from inline keyboard."""
     query = update.callback_query
     await query.answer()
@@ -389,11 +441,11 @@ async def handle_survey_option_selection(update: Update,
     else:
         # Send new message with confirmation
         await query.message.reply_text(f"You selected: {selected_option}")
-        
+
         # Move to the question after "Who is your referral?"
         user_data.current_question += 1
         db.update_user(user_data)
-        
+
         # Check if survey is complete
         if user_data.current_question >= len(SURVEY_QUESTIONS):
             user_data.state = UserState.PENDING_APPROVAL
@@ -417,28 +469,33 @@ async def handle_survey_option_selection(update: Update,
 
             survey_answers = "\n".join(answers_text)
 
-            keyboard = [[
-                InlineKeyboardButton("Approve",
-                                     callback_data=f"approve_{user_id}"),
-                InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")
-            ]]
+            keyboard = [
+                [
+                    InlineKeyboardButton("Approve", callback_data=f"approve_{user_id}"),
+                    InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}"),
+                ]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await context.bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
-                text=(f"New join request from {user_data.username or user_id}:\n\n"
-                      f"{survey_answers}"),
-                reply_markup=reply_markup)
+                text=(
+                    f"New join request from {user_data.username or user_id}:\n\n"
+                    f"{survey_answers}"
+                ),
+                reply_markup=reply_markup,
+            )
 
 
-async def handle_admin_decision(update: Update,
-                                context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_admin_decision(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle admin's approval/rejection."""
     query = update.callback_query
     await query.answer()
 
     # Extract decision and user_id from callback data
-    action, user_id = query.data.split('_')
+    action, user_id = query.data.split("_")
     user_id = int(user_id)
     user_data = db.get_user(user_id)
 
@@ -449,9 +506,10 @@ async def handle_admin_decision(update: Update,
     # Check if user is already in target group
     try:
         member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
-        if member.status not in ['left', 'kicked', 'banned']:
+        if member.status not in ["left", "kicked", "banned"]:
             await query.edit_message_text(
-                "User is already a member of the target group.")
+                "User is already a member of the target group."
+            )
             return
     except Exception:
         # If we can't get member info, continue with the flow
@@ -461,14 +519,13 @@ async def handle_admin_decision(update: Update,
     if user_data.state == UserState.APPROVED:
         try:
             # Revoke old links and generate new one
-            invite_link = await revoke_and_create_invite_link(
-                context.bot, user_data)
+            invite_link = await revoke_and_create_invite_link(context.bot, user_data)
 
             # Notify user with new link
             await context.bot.send_message(
                 chat_id=user_id,
-                text=
-                f"Here's a new invite link to join the group: {invite_link}")
+                text=f"Here's a new invite link to join the group: {invite_link}",
+            )
             await query.edit_message_text(
                 f"User {user_data.username or user_id} was already approved. Sent new invite link."
             )
@@ -477,25 +534,30 @@ async def handle_admin_decision(update: Update,
                 # Send error as new message instead of editing
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
-                    text=
-                    "⚠️ Cannot create invite link because bot needs admin rights in the target group. "
-                    "Please make the bot an admin first before approving requests."
+                    text="⚠️ Cannot create invite link because bot needs admin rights in the target group. "
+                    "Please make the bot an admin first before approving requests.",
                 )
             else:
                 raise e
         return
 
-    if user_data.state != UserState.PENDING_APPROVAL and user_data.state != UserState.PENDING_REJECTION:
+    if (
+        user_data.state != UserState.PENDING_APPROVAL
+        and user_data.state != UserState.PENDING_REJECTION
+    ):
         await query.edit_message_text("This request is no longer valid.")
         return
 
     if action == "approve":
         # If user was in pending rejection, clean up the rejection message
-        if user_data.state == UserState.PENDING_REJECTION and user_data.rejection_message_id:
+        if (
+            user_data.state == UserState.PENDING_REJECTION
+            and user_data.rejection_message_id
+        ):
             try:
                 await context.bot.delete_message(
-                    chat_id=ADMIN_GROUP_ID,
-                    message_id=user_data.rejection_message_id)
+                    chat_id=ADMIN_GROUP_ID, message_id=user_data.rejection_message_id
+                )
             except telegram.error.BadRequest:
                 # Message might be already deleted, ignore
                 pass
@@ -503,8 +565,7 @@ async def handle_admin_decision(update: Update,
 
         try:
             # Revoke old links and generate new one
-            invite_link = await revoke_and_create_invite_link(
-                context.bot, user_data)
+            invite_link = await revoke_and_create_invite_link(context.bot, user_data)
 
             # If invite link creation successful, proceed with approval
             user_data.state = UserState.APPROVED
@@ -513,16 +574,14 @@ async def handle_admin_decision(update: Update,
             # Notify user
             await context.bot.send_message(
                 chat_id=user_id,
-                text=
-                f"Your join request has been approved! Click here to join: {invite_link}"
+                text=f"Your join request has been approved! Click here to join: {invite_link}",
             )
 
             # Remove inline keyboard and update message text
             await query.edit_message_reply_markup(reply_markup=None)
             await context.bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
-                text=
-                f"Request from {user_data.username or user_id} has been approved."
+                text=f"Request from {user_data.username or user_id} has been approved.",
             )
 
             # Export and upload data
@@ -535,16 +594,16 @@ async def handle_admin_decision(update: Update,
             except Exception as e:
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
-                    text=f"❌ Error exporting/uploading data: {str(e)}")
+                    text=f"❌ Error exporting/uploading data: {str(e)}",
+                )
 
         except telegram.error.BadRequest as e:
             if "rights to manage chat invite link" in str(e).lower():
                 # Send error as new message instead of editing
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
-                    text=
-                    "⚠️ Cannot approve request because bot needs admin rights in the target group. "
-                    "Please make the bot an admin first before approving requests."
+                    text="⚠️ Cannot approve request because bot needs admin rights in the target group. "
+                    "Please make the bot an admin first before approving requests.",
                 )
                 # Answer the callback query to remove loading state
                 await query.answer("Cannot approve - bot needs admin rights")
@@ -559,23 +618,26 @@ async def handle_admin_decision(update: Update,
         # Send message asking for rejection reason
         reason_msg = await context.bot.send_message(
             chat_id=ADMIN_GROUP_ID,
-            text=
-            f"Please reply to this message with the reason for rejecting {user_data.username or user_id}'s request."
+            text=f"Please reply to this message with the reason for rejecting {user_data.username or user_id}'s request.",
         )
 
         # Store both the reason request message ID and the original message ID
         user_data.state = UserState.PENDING_REJECTION
         user_data.rejection_message_id = reason_msg.message_id
         # Store the original message ID in the answers dict temporarily
-        user_data.answers['original_message_id'] = query.message.message_id
+        user_data.answers["original_message_id"] = query.message.message_id
         db.update_user(user_data)
 
 
-async def handle_rejection_reason(update: Update,
-                                  context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_rejection_reason(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle the rejection reason reply from admin."""
     # Only process messages in admin group that are replies
-    if update.effective_chat.id != ADMIN_GROUP_ID or not update.message.reply_to_message:
+    if (
+        update.effective_chat.id != ADMIN_GROUP_ID
+        or not update.message.reply_to_message
+    ):
         return
 
     # Get the replied-to message ID
@@ -584,21 +646,25 @@ async def handle_rejection_reason(update: Update,
     # Find user with this rejection_message_id
     all_users = db.get_all_users()
     user_data = next(
-        (user
-         for user in all_users if user.state == UserState.PENDING_REJECTION
-         and user.rejection_message_id == replied_msg_id), None)
+        (
+            user
+            for user in all_users
+            if user.state == UserState.PENDING_REJECTION
+            and user.rejection_message_id == replied_msg_id
+        ),
+        None,
+    )
 
     if not user_data:
         return
 
     rejection_reason = update.message.text.strip()
     if not rejection_reason:
-        await update.message.reply_text(
-            "Please provide a valid rejection reason.")
+        await update.message.reply_text("Please provide a valid rejection reason.")
         return
 
     # Get the original message ID from answers
-    original_message_id = user_data.answers.pop('original_message_id', None)
+    original_message_id = user_data.answers.pop("original_message_id", None)
 
     # Update user state
     user_data.state = UserState.REJECTED
@@ -608,8 +674,7 @@ async def handle_rejection_reason(update: Update,
     # Notify user with reason
     await context.bot.send_message(
         chat_id=user_data.user_id,
-        text=
-        f"Sorry, your join request has been rejected.\nReason: {rejection_reason}"
+        text=f"Sorry, your join request has been rejected.\nReason: {rejection_reason}",
     )
 
     # Remove inline keyboard from original message if we have its ID
@@ -618,7 +683,8 @@ async def handle_rejection_reason(update: Update,
             await context.bot.edit_message_reply_markup(
                 chat_id=ADMIN_GROUP_ID,
                 message_id=original_message_id,
-                reply_markup=None)
+                reply_markup=None,
+            )
         except telegram.error.BadRequest:
             pass
 
@@ -632,8 +698,7 @@ async def handle_rejection_reason(update: Update,
     # Send confirmation to admin group
     await context.bot.send_message(
         chat_id=ADMIN_GROUP_ID,
-        text=
-        f"✅ Rejection completed for {user_data.username or user_data.user_id}\nReason: {rejection_reason}"
+        text=f"✅ Rejection completed for {user_data.username or user_data.user_id}\nReason: {rejection_reason}",
     )
 
     # Export and upload data
@@ -645,29 +710,30 @@ async def handle_rejection_reason(update: Update,
             asyncio.create_task(upload_to_drive(context.bot, csv_path))
     except Exception as e:
         await context.bot.send_message(
-            chat_id=ADMIN_GROUP_ID,
-            text=f"❌ Error exporting/uploading data: {str(e)}")
+            chat_id=ADMIN_GROUP_ID, text=f"❌ Error exporting/uploading data: {str(e)}"
+        )
 
 
 async def export_data(
-        update: Update = None,
-        context: ContextTypes.DEFAULT_TYPE = None) -> tuple[str, str, str]:
+    update: Update = None, context: ContextTypes.DEFAULT_TYPE = None
+) -> tuple[str, str, str]:
     """Export all user data to CSV. Returns tuple of (csv_data, filename, csv_path)."""
     # Only allow command usage in admin group
     if update and update.effective_chat.id != ADMIN_GROUP_ID:
         await update.message.reply_text(
-            "This command can only be used in the admin group.")
+            "This command can only be used in the admin group."
+        )
         return None, None, None
 
     # Set timezone to Singapore (GMT+8)
-    sg_tz = pytz.timezone('Asia/Singapore')
+    sg_tz = pytz.timezone("Asia/Singapore")
 
     # Create CSV in memory
     output = StringIO()
     csv_writer = csv.writer(output)
 
     # Write header
-    headers = ['User ID', 'Username', 'State', 'Join Date (GMT+8)']
+    headers = ["User ID", "Username", "State", "Join Date (GMT+8)"]
     headers.extend(SURVEY_QUESTIONS)  # Add each survey question as a column
     csv_writer.writerow(headers)
 
@@ -681,10 +747,11 @@ async def export_data(
 
         row = [
             user.user_id,
-            user.username or 'None',
+            user.username or "None",
             user.state.value,
-            sg_time.strftime('%Y-%m-%d %H:%M:%S GMT+8'
-                             )  # Format datetime in Singapore timezone
+            sg_time.strftime(
+                "%Y-%m-%d %H:%M:%S GMT+8"
+            ),  # Format datetime in Singapore timezone
         ]
         # Add answers in the same order as questions
         for question in SURVEY_QUESTIONS:
@@ -693,17 +760,17 @@ async def export_data(
                 sisc_question = "How do you know about SISC?"
                 if user.answers.get(sisc_question) != "Referral":
                     continue
-            row.append(user.answers.get(question, ''))
+            row.append(user.answers.get(question, ""))
 
         csv_writer.writerow(row)
 
     # Set csv file name
-    filename = 'sisc_user_data.csv'
+    filename = "sisc_user_data.csv"
     csv_path = filename  # Save in root directory
 
     # Get CSV data and save to file
     csv_data = output.getvalue()
-    with open(csv_path, 'w') as f:
+    with open(csv_path, "w") as f:
         f.write(csv_data)
 
     # If called as command, send the file
@@ -712,14 +779,14 @@ async def export_data(
             chat_id=update.effective_chat.id,
             document=csv_data.encode(),
             filename=filename,
-            caption='Here is the exported user data.')
+            caption="Here is the exported user data.",
+        )
 
     output.close()
     return csv_data, filename, csv_path
 
 
-async def help_command(update: Update,
-                       context: ContextTypes.DEFAULT_TYPE) -> None:
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show list of available commands based on chat type."""
     chat_type = update.effective_chat.type
 
@@ -780,13 +847,13 @@ Note: Each invite link can only be used once and expires after use.
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
 
-async def stats_command(update: Update,
-                        context: ContextTypes.DEFAULT_TYPE) -> None:
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current statistics."""
     # Only allow in admin group
     if update.effective_chat.id != ADMIN_GROUP_ID:
         await update.message.reply_text(
-            "This command can only be used in the admin group.")
+            "This command can only be used in the admin group."
+        )
         return
 
     # Get all users
@@ -794,13 +861,13 @@ async def stats_command(update: Update,
 
     # Calculate stats
     total_users = len(all_users)
-    pending_requests = sum(1 for user in all_users
-                           if user.state == UserState.IN_SURVEY
-                           or user.state == UserState.PENDING_APPROVAL)
-    approved_users = sum(1 for user in all_users
-                         if user.state == UserState.APPROVED)
-    rejected_users = sum(1 for user in all_users
-                         if user.state == UserState.REJECTED)
+    pending_requests = sum(
+        1
+        for user in all_users
+        if user.state == UserState.IN_SURVEY or user.state == UserState.PENDING_APPROVAL
+    )
+    approved_users = sum(1 for user in all_users if user.state == UserState.APPROVED)
+    rejected_users = sum(1 for user in all_users if user.state == UserState.REJECTED)
 
     stats_text = f"""
 *Bot Statistics*
@@ -814,26 +881,26 @@ Rejected Users: {rejected_users}
     await update.message.reply_text(stats_text, parse_mode=ParseMode.MARKDOWN)
 
 
-async def reset_pending_approval_command(update: Update,
-                                      context: ContextTypes.DEFAULT_TYPE) -> None:
+async def reset_pending_approval_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Delete all users with PENDING_APPROVAL state."""
     # Only allow in admin group
     if update.effective_chat.id != ADMIN_GROUP_ID:
         await update.message.reply_text(
-            "This command can only be used in the admin group.")
+            "This command can only be used in the admin group."
+        )
         return
-    
+
     # Delete pending approval users
     deleted_count = db.delete_pending_approval_users()
-    
+
     if deleted_count > 0:
         await update.message.reply_text(
             f"✅ Successfully cleared {deleted_count} pending approval record(s)."
         )
     else:
-        await update.message.reply_text(
-            "No pending approval records found to clear."
-        )
+        await update.message.reply_text("No pending approval records found to clear.")
 
 
 async def upload_to_drive(bot, csv_path: str) -> None:
@@ -848,40 +915,42 @@ async def upload_to_drive(bot, csv_path: str) -> None:
         # Run the upload in a thread pool to not block
         loop = asyncio.get_running_loop()
         upload_result = await loop.run_in_executor(
-            None, lambda: uploader.upload_file(csv_path, folder_id))
+            None, lambda: uploader.upload_file(csv_path, folder_id)
+        )
 
         if upload_result:
             await bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
-                text=
-                f"✅ Successfully uploaded {csv_path} to Google Drive\nLink: {upload_result.get('webViewLink')}"
+                text=f"✅ Successfully uploaded {csv_path} to Google Drive\nLink: {upload_result.get('webViewLink')}",
             )
         else:
             await bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
-                text=f"❌ Failed to upload {csv_path} to Google Drive")
+                text=f"❌ Failed to upload {csv_path} to Google Drive",
+            )
 
     except Exception as e:
         await bot.send_message(
-            chat_id=ADMIN_GROUP_ID,
-            text=f"❌ Error uploading to Google Drive: {str(e)}")
+            chat_id=ADMIN_GROUP_ID, text=f"❌ Error uploading to Google Drive: {str(e)}"
+        )
 
 
-async def transcribe_audio_command(update: Update,
-                                   context: ContextTypes.DEFAULT_TYPE) -> None:
+async def transcribe_audio_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Start the audio transcription process by requesting an audio file."""
     # Only allow in admin group
     if update.effective_chat.id != ADMIN_GROUP_ID:
         await update.message.reply_text(
-            "This command can only be used in the admin group.")
+            "This command can only be used in the admin group."
+        )
         return
 
     # Check if there's already an active transcription
     active_transcription = db.get_active_transcription()
     if active_transcription:
         # Calculate time elapsed
-        elapsed_time = datetime.now(
-            timezone.utc) - active_transcription.start_time
+        elapsed_time = datetime.now(timezone.utc) - active_transcription.start_time
         elapsed_minutes = elapsed_time.total_seconds() / 60
 
         await update.message.reply_text(
@@ -898,16 +967,18 @@ async def transcribe_audio_command(update: Update,
     )
 
     # Store the message ID in user_data for reference
-    context.user_data['transcribe_request_id'] = message.message_id
+    context.user_data["transcribe_request_id"] = message.message_id
 
 
 async def check_transcription_status_command(
-        update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Check the status of any ongoing transcription."""
     # Only allow in admin group
     if update.effective_chat.id != ADMIN_GROUP_ID:
         await update.message.reply_text(
-            "This command can only be used in the admin group.")
+            "This command can only be used in the admin group."
+        )
         return
 
     # Get active transcription
@@ -915,7 +986,8 @@ async def check_transcription_status_command(
 
     if not active_transcription:
         await update.message.reply_text(
-            "No audio is being transcribed or processed currently.")
+            "No audio is being transcribed or processed currently."
+        )
         return
 
     # Calculate time elapsed
@@ -925,29 +997,34 @@ async def check_transcription_status_command(
     # Format status message based on state
     if active_transcription.is_fully_completed:
         await update.message.reply_text(
-            "No audio is being transcribed or processed currently.")
+            "No audio is being transcribed or processed currently."
+        )
         return
     elif not active_transcription.is_completed:
         status_msg = (
             f"🎵 Transcribing file: {os.path.basename(active_transcription.file_path)}\n"
             f"Progress: {active_transcription.percentage:.1f}%\n"
-            f"Time elapsed: {elapsed_minutes:.1f} minutes")
+            f"Time elapsed: {elapsed_minutes:.1f} minutes"
+        )
     elif active_transcription.is_extracting_insights:
         status_msg = (
             f"✅ Transcription completed for: {os.path.basename(active_transcription.file_path)}\n"
             f"🔄 Now extracting discussion insights...\n"
-            f"Time elapsed: {elapsed_minutes:.1f} minutes")
+            f"Time elapsed: {elapsed_minutes:.1f} minutes"
+        )
     else:
         status_msg = (
             f"✅ Transcription completed for: {os.path.basename(active_transcription.file_path)}\n"
             f"⏳ Preparing to extract discussion insights...\n"
-            f"Time elapsed: {elapsed_minutes:.1f} minutes")
+            f"Time elapsed: {elapsed_minutes:.1f} minutes"
+        )
 
     await update.message.reply_text(status_msg)
 
 
-async def process_transcription(bot, chat_id, file_path: str,
-                                base_filename: str, processing_msg) -> None:
+async def process_transcription(
+    bot, chat_id, file_path: str, base_filename: str, processing_msg
+) -> None:
     """Process transcription in background."""
     try:
         # Start tracking transcription
@@ -961,8 +1038,11 @@ async def process_transcription(bot, chat_id, file_path: str,
         # Process the file with progress tracking - run in executor to not block
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            None, lambda: transcriber.transcribe(
-                file_path, progress_callback=progress_callback))
+            None,
+            lambda: transcriber.transcribe(
+                file_path, progress_callback=progress_callback
+            ),
+        )
 
         # Mark transcription as complete but keep tracking for insights
         db.complete_transcription(file_path)
@@ -976,19 +1056,22 @@ async def process_transcription(bot, chat_id, file_path: str,
 
             # Upload to Google Drive using event loop
             upload_result = await loop.run_in_executor(
-                None, lambda: uploader.upload_file(
-                    transcription_file, GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID))
+                None,
+                lambda: uploader.upload_file(
+                    transcription_file, GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID
+                ),
+            )
 
             if upload_result:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=
-                    f"✅ Transcription completed and uploaded to Google Drive!\nLink: {upload_result.get('webViewLink')}\n\n🔄 Now extracting discussion insights..."
+                    text=f"✅ Transcription completed and uploaded to Google Drive!\nLink: {upload_result.get('webViewLink')}\n\n🔄 Now extracting discussion insights...",
                 )
             else:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text="❌ Failed to upload transcription to Google Drive")
+                    text="❌ Failed to upload transcription to Google Drive",
+                )
 
             # Start insight extraction
             db.start_insight_extraction(file_path)
@@ -996,15 +1079,16 @@ async def process_transcription(bot, chat_id, file_path: str,
             # Generate insights - run in executor
             try:
                 await loop.run_in_executor(
-                    None, lambda: transcriber.extract_discussion_insight(
-                        transcription_file))
+                    None,
+                    lambda: transcriber.extract_discussion_insight(transcription_file),
+                )
 
                 # Get the base filename from transcription file path
                 transcription_base = os.path.splitext(
-                    os.path.basename(transcription_file))[0]
-                if transcription_base.endswith('_transcription'):
-                    base_filename = transcription_base[:
-                                                       -14]  # remove '_transcription'
+                    os.path.basename(transcription_file)
+                )[0]
+                if transcription_base.endswith("_transcription"):
+                    base_filename = transcription_base[:-14]  # remove '_transcription'
 
                 docx_path = f"./discussion_insights/{base_filename}_insights.docx"
 
@@ -1013,38 +1097,41 @@ async def process_transcription(bot, chat_id, file_path: str,
                 if os.path.exists(docx_path):
                     try:
                         result = await loop.run_in_executor(
-                            None, lambda: uploader.upload_file(
-                                docx_path,
-                                GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID))
+                            None,
+                            lambda: uploader.upload_file(
+                                docx_path, GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID
+                            ),
+                        )
                         if result:
-                            upload_results.append((os.path.basename(docx_path),
-                                                   result.get('webViewLink')))
+                            upload_results.append(
+                                (os.path.basename(docx_path), result.get("webViewLink"))
+                            )
                     except Exception as e:
                         await bot.send_message(
                             chat_id=chat_id,
-                            text=
-                            f"❌ Failed to upload {os.path.basename(docx_path)}: {str(e)}"
+                            text=f"❌ Failed to upload {os.path.basename(docx_path)}: {str(e)}",
                         )
 
                 # Send success message with links if any uploads succeeded
                 if upload_results:
                     links_text = "\n".join(
-                        [f"• {name}: {link}" for name, link in upload_results])
+                        [f"• {name}: {link}" for name, link in upload_results]
+                    )
                     await bot.send_message(
                         chat_id=chat_id,
-                        text=
-                        f"📊 Discussion insights generated and uploaded:\n{links_text}"
+                        text=f"📊 Discussion insights generated and uploaded:\n{links_text}",
                     )
                 else:
                     await bot.send_message(
                         chat_id=chat_id,
-                        text=
-                        "❌ Failed to generate or upload discussion insights")
+                        text="❌ Failed to generate or upload discussion insights",
+                    )
 
             except Exception as e:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"❌ Error generating discussion insights: {str(e)}")
+                    text=f"❌ Error generating discussion insights: {str(e)}",
+                )
                 # Mark transcription as failed and cleanup
                 db.complete_transcription(file_path, error=str(e))
                 db.complete_insight_extraction(file_path)
@@ -1053,8 +1140,7 @@ async def process_transcription(bot, chat_id, file_path: str,
         except Exception as e:
             await bot.send_message(
                 chat_id=chat_id,
-                text=
-                f"✅ Transcription completed but failed to upload to Google Drive: {str(e)}"
+                text=f"✅ Transcription completed but failed to upload to Google Drive: {str(e)}",
             )
             # Mark transcription as failed and cleanup
             db.complete_transcription(file_path, error=str(e))
@@ -1070,13 +1156,12 @@ async def process_transcription(bot, chat_id, file_path: str,
         db.complete_insight_extraction(file_path)
         # Edit the processing message to show error
         try:
-            await processing_msg.edit_text(
-                f"❌ Error during transcription: {str(e)}")
+            await processing_msg.edit_text(f"❌ Error during transcription: {str(e)}")
         except Exception:
             # If editing fails, try to send a new message
             await bot.send_message(
-                chat_id=chat_id,
-                text=f"❌ Error during transcription: {str(e)}")
+                chat_id=chat_id, text=f"❌ Error during transcription: {str(e)}"
+            )
         raise e
     finally:
         # Always ensure we complete insight extraction status
@@ -1084,10 +1169,7 @@ async def process_transcription(bot, chat_id, file_path: str,
 
 
 async def download_large_file(
-    message_id: int,
-    chat_id: int,
-    file_path: str,
-    progress_callback=None
+    message_id: int, chat_id: int, file_path: str, progress_callback=None
 ) -> bool:
     """Download large file using Pyrogram asynchronously, with throttled progress updates."""
 
@@ -1103,9 +1185,8 @@ async def download_large_file(
             "audio_downloader_temp",
             api_id=TELEGRAM_API_KEY,
             api_hash=TELEGRAM_HASH,
-            bot_token=BOT_TOKEN
+            bot_token=BOT_TOKEN,
         ) as client:
-
             # Get the message
             message = await client.get_messages(chat_id=chat_id, message_ids=message_id)
             if not message:
@@ -1122,7 +1203,9 @@ async def download_large_file(
                 now = time.time()
 
                 # Only update if min_interval has passed or download is finished
-                if progress_callback and (now - last_update_time >= min_interval or current == total):
+                if progress_callback and (
+                    now - last_update_time >= min_interval or current == total
+                ):
                     last_update_time = now
                     future = asyncio.run_coroutine_threadsafe(
                         progress_callback(current, total), main_loop
@@ -1134,9 +1217,7 @@ async def download_large_file(
 
             # Download the file
             result = await client.download_media(
-                message=message,
-                file_name=file_path,
-                progress=progress
+                message=message, file_name=file_path, progress=progress
             )
 
             return bool(result)
@@ -1146,15 +1227,19 @@ async def download_large_file(
         return False
 
 
-async def handle_audio_upload(update: Update,
-                              context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_audio_upload(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle uploaded audio files for transcription."""
     # Only process in admin group and only if it's a reply
-    if update.effective_chat.id != ADMIN_GROUP_ID or not update.message.reply_to_message:
+    if (
+        update.effective_chat.id != ADMIN_GROUP_ID
+        or not update.message.reply_to_message
+    ):
         return
 
     # Check if this is a reply to our transcribe request
-    request_id = context.user_data.get('transcribe_request_id')
+    request_id = context.user_data.get("transcribe_request_id")
     if not request_id or update.message.reply_to_message.message_id != request_id:
         return
 
@@ -1178,8 +1263,10 @@ async def handle_audio_upload(update: Update,
         file_name = f"voice_{update.message.date.strftime('%Y%m%d_%H%M%S')}.ogg"
     elif update.message.document:
         # Check if document mime type is audio
-        if update.message.document.mime_type and update.message.document.mime_type.startswith(
-                'audio/'):
+        if (
+            update.message.document.mime_type
+            and update.message.document.mime_type.startswith("audio/")
+        ):
             audio_file = update.message.document
             file_name = audio_file.file_name
 
@@ -1203,9 +1290,9 @@ async def handle_audio_upload(update: Update,
         return
 
     # Create necessary directories
-    os.makedirs('./audios', exist_ok=True)
-    os.makedirs('./transcriptions', exist_ok=True)
-    os.makedirs('./discussion_insights', exist_ok=True)
+    os.makedirs("./audios", exist_ok=True)
+    os.makedirs("./transcriptions", exist_ok=True)
+    os.makedirs("./discussion_insights", exist_ok=True)
 
     # Get base filename without extension for consistent naming
     base_filename = os.path.splitext(file_name)[0]
@@ -1220,15 +1307,16 @@ async def handle_audio_upload(update: Update,
             # File is too big for Bot API, try Pyrogram
             progress_msg = await update.message.reply_text(
                 "📥 File is larger than 20MB. Starting download using alternative method...\n"
-                "Progress: 0%")
+                "Progress: 0%"
+            )
 
             # Create progress callback
             async def progress_callback(current: int, total: int):
                 try:
                     percentage = (current / total) * 100
                     await progress_msg.edit_text(
-                        f"📥 Downloading large file...\n"
-                        f"Progress: {percentage:.1f}%")
+                        f"📥 Downloading large file...\nProgress: {percentage:.1f}%"
+                    )
                 except Exception:
                     # Ignore errors from too many updates
                     pass
@@ -1237,7 +1325,8 @@ async def handle_audio_upload(update: Update,
                 message_id=update.message.message_id,
                 chat_id=update.effective_chat.id,
                 file_path=file_path,
-                progress_callback=progress_callback)
+                progress_callback=progress_callback,
+            )
 
             if not success:
                 await update.message.reply_text(
@@ -1252,16 +1341,75 @@ async def handle_audio_upload(update: Update,
             raise e
 
     # Send processing message
-    processing_msg = await update.message.reply_text(
-        "🎵 Processing audio file...")
+    processing_msg = await update.message.reply_text("🎵 Processing audio file...")
 
     # Start transcription process in background
     asyncio.create_task(
-        process_transcription(context.bot, update.effective_chat.id, file_path,
-                              base_filename, processing_msg))
+        process_transcription(
+            context.bot,
+            update.effective_chat.id,
+            file_path,
+            base_filename,
+            processing_msg,
+        )
+    )
 
     await update.message.reply_text(
         "🎵 Started transcription in background. You can use /check_transcription_status to check progress."
+    )
+
+
+async def handle_target_group_message(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if not update.message:
+        return
+    if not update.message.text:
+        return
+
+    message_data = {
+        "message_id": update.message.message_id,
+        "chat_id": update.effective_chat.id,
+        "user_id": update.effective_user.id if update.effective_user else None,
+        "username": (update.effective_user.username if update.effective_user else None),
+        "first_name": (
+            update.effective_user.first_name if update.effective_user else None
+        ),
+        "text": update.message.text,
+        "date": (update.message.date.isoformat() if update.message.date else None),
+    }
+
+    asyncio.create_task(process_enrichment(message_data, context.bot))
+
+
+async def enable_enrichment_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    db.update_enrichment_state(is_enabled=True)
+    await update.message.reply_text("AI context enrichment enabled.")
+
+
+async def disable_enrichment_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    db.update_enrichment_state(is_enabled=False)
+    await update.message.reply_text("AI context enrichment disabled.")
+
+
+async def enrichment_status_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    state = db.get_enrichment_state()
+    status = "enabled" if state["is_enabled"] else "disabled"
+    await update.message.reply_text(
+        f"AI context enrichment is {status}.\n"
+        f"Last processed message ID: {state['last_processed_message_id']}"
     )
 
 
@@ -1273,8 +1421,7 @@ def reset_active_transcriptions():
             # Just mark the existing transcription as completed with error
             db.complete_transcription(
                 active_transcription.file_path,
-                error=
-                "Application restarted - Previous transcription was incomplete"
+                error="Application restarted - Previous transcription was incomplete",
             )
             db.complete_insight_extraction(active_transcription.file_path)
 
@@ -1292,24 +1439,30 @@ def main() -> None:
     reset_active_transcriptions()
 
     # Create necessary directories
-    os.makedirs('./audios', exist_ok=True)
-    os.makedirs('./transcriptions', exist_ok=True)
-    os.makedirs('./discussion_insights', exist_ok=True)
+    os.makedirs("./audios", exist_ok=True)
+    os.makedirs("./transcriptions", exist_ok=True)
+    os.makedirs("./discussion_insights", exist_ok=True)
 
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Set up commands for admin group
-    admin_commands = [("help", "Show admin commands and features"),
-                      ("export", "Export user data to CSV"),
-                      ("stats", "Show current statistics"),
-                      ("transcribe_audio", "Transcribe an audio file"),
-                      ("check_transcription_status",
-                       "Check status of ongoing transcription")]
+    admin_commands = [
+        ("help", "Show admin commands and features"),
+        ("export", "Export user data to CSV"),
+        ("stats", "Show current statistics"),
+        ("transcribe_audio", "Transcribe an audio file"),
+        ("check_transcription_status", "Check status of ongoing transcription"),
+        ("enable_insights", "Enable AI context enrichment"),
+        ("disable_insights", "Disable AI context enrichment"),
+        ("insights_status", "Check AI enrichment status"),
+    ]
 
     # Set up commands for regular users
-    user_commands = [("start", "Start the join process or get invite link"),
-                     ("help", "Show available commands and how to join")]
+    user_commands = [
+        ("start", "Start the join process or get invite link"),
+        ("help", "Show available commands and how to join"),
+    ]
 
     # Register commands with their descriptions
     async def post_init(app: Application) -> None:
@@ -1329,7 +1482,8 @@ def main() -> None:
                 BotCommand(command, description)
                 for command, description in admin_commands
             ],
-            scope=BotCommandScopeChat(chat_id=ADMIN_GROUP_ID))
+            scope=BotCommandScopeChat(chat_id=ADMIN_GROUP_ID),
+        )
 
         # Set user commands (only visible in private chats)
         await app.bot.set_my_commands(
@@ -1337,8 +1491,7 @@ def main() -> None:
                 BotCommand(command, description)
                 for command, description in user_commands
             ],
-            scope=BotCommandScopeAllPrivateChats(
-        )  # Only show in private chats
+            scope=BotCommandScopeAllPrivateChats(),  # Only show in private chats
         )
 
         app.create_task(_batch_announce_loop(app.bot))
@@ -1351,64 +1504,112 @@ def main() -> None:
     admin_group_filter = filters.Chat(chat_id=ADMIN_GROUP_ID)
 
     # Add handlers with appropriate filters
+    application.add_handler(CommandHandler("start", start, filters=private_chat_filter))
     application.add_handler(
-        CommandHandler("start", start, filters=private_chat_filter))
+        CommandHandler(
+            "help", help_command, filters=private_chat_filter | admin_group_filter
+        )
+    )
     application.add_handler(
-        CommandHandler("help",
-                       help_command,
-                       filters=private_chat_filter | admin_group_filter))
+        CommandHandler("export", export_data, filters=admin_group_filter)
+    )
     application.add_handler(
-        CommandHandler("export", export_data, filters=admin_group_filter))
+        CommandHandler("stats", stats_command, filters=admin_group_filter)
+    )
     application.add_handler(
-        CommandHandler("stats", stats_command, filters=admin_group_filter))
+        CommandHandler(
+            "reset_pending_approval",
+            reset_pending_approval_command,
+            filters=admin_group_filter,
+        )
+    )
     application.add_handler(
-        CommandHandler("reset_pending_approval",
-                       reset_pending_approval_command,
-                       filters=admin_group_filter))
+        CommandHandler(
+            "transcribe_audio", transcribe_audio_command, filters=admin_group_filter
+        )
+    )
     application.add_handler(
-        CommandHandler("transcribe_audio",
-                       transcribe_audio_command,
-                       filters=admin_group_filter))
+        CommandHandler(
+            "check_transcription_status",
+            check_transcription_status_command,
+            filters=admin_group_filter,
+        )
+    )
     application.add_handler(
-        CommandHandler("check_transcription_status",
-                       check_transcription_status_command,
-                       filters=admin_group_filter))
+        CommandHandler(
+            "enable_insights", enable_enrichment_command, filters=admin_group_filter
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "disable_insights", disable_enrichment_command, filters=admin_group_filter
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "insights_status", enrichment_status_command, filters=admin_group_filter
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.Chat(chat_id=TARGET_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
+            handle_target_group_message,
+        )
+    )
 
     application.add_handler(
         MessageHandler(
             filters.Chat(chat_id=TARGET_GROUP_ID)
             & filters.StatusUpdate.NEW_CHAT_MEMBERS,
-            announce_new_member))
+            announce_new_member,
+        )
+    )
     application.add_handler(
         ChatMemberHandler(
-            handle_chat_member_update,
-            chat_member_types=ChatMemberHandler.CHAT_MEMBER))
+            handle_chat_member_update, chat_member_types=ChatMemberHandler.CHAT_MEMBER
+        )
+    )
 
     # Add message handlers
-    application.add_handler(CallbackQueryHandler(handle_admin_decision, pattern=r'^(approve|reject)_'))
+    application.add_handler(
+        CallbackQueryHandler(handle_admin_decision, pattern=r"^(approve|reject)_")
+    )
     # application.add_handler(CallbackQueryHandler(handle_survey_back_navigation, pattern=r'^survey_back$'))
     application.add_handler(CallbackQueryHandler(handle_survey_option_selection))
 
     # Handler for rejection reasons - only in admin group and must be a reply
     application.add_handler(
         MessageHandler(
-            filters.Chat(chat_id=ADMIN_GROUP_ID) & filters.REPLY & filters.TEXT
-            & ~filters.COMMAND, handle_rejection_reason))
+            filters.Chat(chat_id=ADMIN_GROUP_ID)
+            & filters.REPLY
+            & filters.TEXT
+            & ~filters.COMMAND,
+            handle_rejection_reason,
+        )
+    )
 
     # Handler for audio transcription replies - catch all types of replies
     application.add_handler(
         MessageHandler(
-            filters.Chat(chat_id=ADMIN_GROUP_ID) & filters.REPLY & filters.ALL
-            & ~filters.COMMAND, handle_audio_upload))
+            filters.Chat(chat_id=ADMIN_GROUP_ID)
+            & filters.REPLY
+            & filters.ALL
+            & ~filters.COMMAND,
+            handle_audio_upload,
+        )
+    )
 
     # Handler for survey responses - must be last to not interfere with other handlers
     application.add_handler(
-        MessageHandler(filters.ChatType.PRIVATE & ~filters.COMMAND,
-                       handle_survey_response))
+        MessageHandler(
+            filters.ChatType.PRIVATE & ~filters.COMMAND, handle_survey_response
+        )
+    )
 
     # Start the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
