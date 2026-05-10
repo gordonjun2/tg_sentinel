@@ -7,17 +7,22 @@ import time
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import List
 from config import GEMINI_API_KEY
-from utils import (chunk_audio_with_overlap, remove_overlap_text,
-                   convert_text_to_pdf, convert_text_to_md, sys_msg,
-                   sys_msg_final_summary, convert_text_to_docx)
+from utils import (
+    chunk_audio_with_overlap,
+    remove_overlap_text,
+    convert_text_to_pdf,
+    convert_text_to_md,
+    sys_msg,
+    sys_msg_final_summary,
+    convert_text_to_docx,
+)
 from database import db  # Import here to avoid circular imports
 
 
 class AudioTranscriber:
-
     def __init__(self):
         self.asr_model = "whisperx"
         self.device = "cpu"
@@ -33,9 +38,9 @@ class AudioTranscriber:
         if self.asr_model.lower() == "whisper":
             self.model = whisper.load_model("turbo", self.device)
         else:
-            self.model = whisperx.load_model("medium",
-                                             self.device,
-                                             compute_type=self.compute_type)
+            self.model = whisperx.load_model(
+                "medium", self.device, compute_type=self.compute_type
+            )
 
         self.gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -47,8 +52,9 @@ class AudioTranscriber:
             audio = whisperx.load_audio(audio_file)
 
         # Chunk audio
-        audio_chunks = chunk_audio_with_overlap(audio, self.chunk_size_seconds,
-                                                self.overlap_seconds)
+        audio_chunks = chunk_audio_with_overlap(
+            audio, self.chunk_size_seconds, self.overlap_seconds
+        )
 
         # Process each chunk and collect transcriptions
         prev_chunk_text = ""
@@ -68,8 +74,9 @@ class AudioTranscriber:
             result = self.model.transcribe(chunk, language=self.language)
 
             # Keep only segments after chunk_start
-            chunk_text = " ".join(segment["text"].strip()
-                                  for segment in result["segments"])
+            chunk_text = " ".join(
+                segment["text"].strip() for segment in result["segments"]
+            )
 
             # Remove overlap with previous chunk
             if prev_chunk_text:
@@ -101,7 +108,7 @@ class AudioTranscriber:
             # Mark that we're starting insight extraction
             db.start_insight_extraction(file_path)
 
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
 
             # Initialize the text splitter
@@ -120,9 +127,9 @@ class AudioTranscriber:
             for i, chunk in enumerate(chunks, 1):
                 response = self.gemini_client.models.generate_content(
                     model="gemini-2.5-flash",
-                    config=types.GenerateContentConfig(
-                        system_instruction=sys_msg),
-                    contents=chunk)
+                    config=types.GenerateContentConfig(system_instruction=sys_msg),
+                    contents=chunk,
+                )
                 chunk_responses.append(response.text)
 
                 # Sleep for 10 seconds between chunks
@@ -135,15 +142,17 @@ class AudioTranscriber:
             final_response = self.gemini_client.models.generate_content(
                 model="gemini-2.5-flash",
                 config=types.GenerateContentConfig(
-                    system_instruction=sys_msg_final_summary),
-                contents=combined_responses)
+                    system_instruction=sys_msg_final_summary
+                ),
+                contents=combined_responses,
+            )
 
             final_text = final_response.text
 
             # Get base filename from transcription file path
             # Remove _transcription.txt to get the original base filename
             base_filename = os.path.splitext(os.path.basename(file_path))[0]
-            if base_filename.endswith('_transcription'):
+            if base_filename.endswith("_transcription"):
                 base_filename = base_filename[:-14]  # remove '_transcription'
 
             # Define output paths
@@ -168,18 +177,18 @@ class AudioTranscriber:
 
 if __name__ == "__main__":
     transcriber = AudioTranscriber()
-    
+
     # Get file path from command line argument or prompt user
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
     else:
         file_path = input("Enter the transcription file path: ").strip()
-    
+
     # Validate file exists
     if not os.path.exists(file_path):
         print(f"Error: File not found: {file_path}")
         sys.exit(1)
-    
+
     # Extract discussion insights
     print(f"Processing file: {file_path}")
     try:
