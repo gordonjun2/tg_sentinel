@@ -75,7 +75,7 @@ CONTENT RULES:
 - Do NOT ask follow-up questions
 - Do NOT give opinions or say "I think"
 - Do NOT cite sources inline within the text. Write the enrichment content cleanly without any links or source names in the body.
-- After the body text, add a blank line, then list sources. If 1 source: single "Sources:" line using markdown links. If multiple sources, use bullet points. Example with multiple: \nSources:\n• [name1](url1)\n• [name2](url2)
+- After the body text, add a blank line, then "Sources:" on its own line, followed by bullet points. ALWAYS use bullet points for sources regardless of count. Example:\nSources:\n• [name1](url1)\n• [name2](url2)
 - Each source URL should appear only ONCE in the sources line, never repeated.
 - Do NOT repeat what was already said in the conversation
 - Write in a neutral, informative tone
@@ -371,14 +371,21 @@ def _escape_md_v2(text: str) -> str:
 
 _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 _BULLET_RE = re.compile(r"^[\s]*[•\-]\s*", re.MULTILINE)
-_SOURCE_HEADER_RE = re.compile(r"^Sources:\s*$", re.MULTILINE)
+_SOURCE_HEADER_RE = re.compile(r"^Sources:\s*(.*)$", re.MULTILINE)
 
 
 def format_reply_for_telegram(raw_reply: str) -> str:
     source_match = _SOURCE_HEADER_RE.search(raw_reply)
     if source_match:
         body = raw_reply[: source_match.start()].strip()
-        sources_section = raw_reply[source_match.end() :].strip()
+        inline_content = source_match.group(1).strip()
+        after_content = raw_reply[source_match.end() :].strip()
+        parts_list = []
+        if inline_content:
+            parts_list.append(inline_content)
+        if after_content:
+            parts_list.append(after_content)
+        sources_section = "\n".join(parts_list)
     else:
         body = raw_reply.strip()
         sources_section = ""
@@ -462,6 +469,24 @@ RULES:
 - If should_create_poll is false, leave question, options, and allows_multiple_answers as null."""
 
 
+def _create_gemini_instructor():
+    if hasattr(instructor, "from_provider"):
+        return instructor.from_provider(f"google/{GEMINI_ENRICHMENT_MODEL}")
+    if hasattr(instructor, "from_genai"):
+        return instructor.from_genai(gemini_client)
+    if hasattr(instructor, "from_google"):
+        return instructor.from_google(gemini_client)
+    return None
+
+
+def _create_openai_instructor():
+    if not openai_client:
+        return None
+    if hasattr(instructor, "from_provider"):
+        return instructor.from_provider(f"openai/{OPENAI_ENRICHMENT_MODEL}")
+    return instructor.from_openai(openai_client)
+
+
 def evaluate_poll_opportunity(
     context_text: str, topic: str, retrieved_context: str
 ) -> Optional[PollEvaluation]:
@@ -478,26 +503,27 @@ def evaluate_poll_opportunity(
 Based on the conversation and context above, would this topic make for a fun, engaging poll?"""
 
     try:
-        client = instructor.from_provider(f"google/{GEMINI_ENRICHMENT_MODEL}")
-        result = client.create(
-            response_model=PollEvaluation,
-            messages=[
-                {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            max_retries=2,
-        )
-        logger.info(
-            "[Enrichment] evaluate_poll_opportunity succeeded via Gemini (instructor)"
-        )
-        return result
+        client = _create_gemini_instructor()
+        if client:
+            result = client.chat.completions.create(
+                response_model=PollEvaluation,
+                messages=[
+                    {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+                max_retries=2,
+            )
+            logger.info(
+                "[Enrichment] evaluate_poll_opportunity succeeded via Gemini (instructor)"
+            )
+            return result
     except Exception as e:
         logger.warning(f"[Enrichment] Gemini poll evaluation failed: {e}")
 
-    if OPENAI_API_KEY:
-        try:
-            client = instructor.from_provider(f"openai/{OPENAI_ENRICHMENT_MODEL}")
-            result = client.create(
+    try:
+        client = _create_openai_instructor()
+        if client:
+            result = client.chat.completions.create(
                 response_model=PollEvaluation,
                 messages=[
                     {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
@@ -509,10 +535,8 @@ Based on the conversation and context above, would this topic make for a fun, en
                 "[Enrichment] evaluate_poll_opportunity succeeded via OpenAI (instructor fallback)"
             )
             return result
-        except Exception as e:
-            logger.error(
-                f"[Enrichment] OpenAI poll evaluation fallback also failed: {e}"
-            )
+    except Exception as e:
+        logger.error(f"[Enrichment] OpenAI poll evaluation fallback also failed: {e}")
 
     return None
 
