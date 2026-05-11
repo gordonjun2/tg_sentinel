@@ -44,7 +44,7 @@ from audio_transcribe import AudioTranscriber
 import os
 import time
 from pyrogram import Client, utils
-from ai_enrichment import process_enrichment, buffer
+from ai_enrichment import process_enrichment, buffer, admin_buffer
 
 # Enable logging
 logging.basicConfig(
@@ -820,6 +820,13 @@ Note: Each invite link can only be used once and expires after use.
 /stats - Show current statistics
 /reset\\_pending\\_approval - Clear all pending approval records
 
+*AI Enrichment Commands:*
+/enable\\_insights - Enable AI enrichment in target group
+/disable\\_insights - Disable AI enrichment in target group
+/enable\\_admin\\_insights - Enable AI enrichment in admin group
+/disable\\_admin\\_insights - Disable AI enrichment in admin group
+/insights\\_status - Check enrichment status for all groups
+
 *Audio Processing Commands:*
 /transcribe\\_audio - Start audio transcription
 /check\\_transcription\\_status - Check transcription progress
@@ -1382,6 +1389,31 @@ async def handle_target_group_message(
     asyncio.create_task(process_enrichment(message_data, context.bot))
 
 
+async def handle_admin_group_message(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if not update.message:
+        return
+    if not update.message.text:
+        return
+
+    message_data = {
+        "message_id": update.message.message_id,
+        "chat_id": update.effective_chat.id,
+        "user_id": update.effective_user.id if update.effective_user else None,
+        "username": (update.effective_user.username if update.effective_user else None),
+        "first_name": (
+            update.effective_user.first_name if update.effective_user else None
+        ),
+        "text": update.message.text,
+        "date": (update.message.date.isoformat() if update.message.date else None),
+    }
+
+    asyncio.create_task(
+        process_enrichment(message_data, context.bot, group_type="admin")
+    )
+
+
 async def enable_enrichment_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -1405,12 +1437,34 @@ async def enrichment_status_command(
 ) -> None:
     if update.effective_chat.id != ADMIN_GROUP_ID:
         return
-    state = db.get_enrichment_state()
-    status = "enabled" if state["is_enabled"] else "disabled"
+    target_state = db.get_enrichment_state()
+    admin_state = db.get_admin_enrichment_state()
+    target_status = "enabled" if target_state["is_enabled"] else "disabled"
+    admin_status = "enabled" if admin_state["is_enabled_admin"] else "disabled"
     await update.message.reply_text(
-        f"AI context enrichment is {status}.\n"
-        f"Last processed message ID: {state['last_processed_message_id']}"
+        f"AI enrichment status:\n"
+        f"• Target group: {target_status}\n"
+        f"• Admin group: {admin_status}\n\n"
+        f"Last processed message ID (target): {target_state['last_processed_message_id']}"
     )
+
+
+async def enable_admin_insights_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    db.update_admin_enrichment_state(is_enabled=True)
+    await update.message.reply_text("AI context enrichment enabled for admin group.")
+
+
+async def disable_admin_insights_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    db.update_admin_enrichment_state(is_enabled=False)
+    await update.message.reply_text("AI context enrichment disabled for admin group.")
 
 
 def reset_active_transcriptions():
@@ -1453,11 +1507,12 @@ def main() -> None:
         ("stats", "Show current statistics"),
         ("transcribe_audio", "Transcribe an audio file"),
         ("check_transcription_status", "Check status of ongoing transcription"),
-        ("enable_insights", "Enable AI context enrichment"),
-        ("disable_insights", "Disable AI context enrichment"),
-        ("insights_status", "Check AI enrichment status"),
+        ("enable_insights", "Enable AI enrichment (target group)"),
+        ("disable_insights", "Disable AI enrichment (target group)"),
+        ("insights_status", "Check AI enrichment status (all groups)"),
+        ("enable_admin_insights", "Enable AI enrichment (admin group)"),
+        ("disable_admin_insights", "Disable AI enrichment (admin group)"),
     ]
-
     # Set up commands for regular users
     user_commands = [
         ("start", "Start the join process or get invite link"),
@@ -1550,11 +1605,35 @@ def main() -> None:
             "insights_status", enrichment_status_command, filters=admin_group_filter
         )
     )
+    application.add_handler(
+        CommandHandler(
+            "enable_admin_insights",
+            enable_admin_insights_command,
+            filters=admin_group_filter,
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "disable_admin_insights",
+            disable_admin_insights_command,
+            filters=admin_group_filter,
+        )
+    )
 
     application.add_handler(
         MessageHandler(
             filters.Chat(chat_id=TARGET_GROUP_ID) & filters.TEXT & ~filters.COMMAND,
             handle_target_group_message,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.Chat(chat_id=ADMIN_GROUP_ID)
+            & filters.TEXT
+            & ~filters.COMMAND
+            & ~filters.REPLY,
+            handle_admin_group_message,
         )
     )
 

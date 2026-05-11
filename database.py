@@ -147,14 +147,22 @@ class Database:
                 """)
                 cursor.execute(
                     """
-                    INSERT INTO enrichment_state (last_processed_message_id, is_enabled, updated_at)
-                    VALUES (0, ?, ?)
+                    INSERT INTO enrichment_state (last_processed_message_id, is_enabled, is_enabled_admin, updated_at)
+                    VALUES (0, ?, ?, ?)
                 """,
                     (
+                        AI_ENRICHMENT_ENABLED_DEFAULT,
                         AI_ENRICHMENT_ENABLED_DEFAULT,
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )
+            else:
+                cursor.execute("PRAGMA table_info(enrichment_state)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if "is_enabled_admin" not in columns:
+                    cursor.execute(
+                        "ALTER TABLE enrichment_state ADD COLUMN is_enabled_admin BOOLEAN DEFAULT 1"
+                    )
 
             cursor.execute("""
                 SELECT name FROM sqlite_master WHERE type='table' AND name='enrichment_replies'
@@ -477,6 +485,34 @@ class Database:
                 params.append(last_processed_message_id)
             if is_enabled is not None:
                 updates.append("is_enabled = ?")
+                params.append(is_enabled)
+            updates.append("updated_at = ?")
+            params.append(datetime.now(timezone.utc).isoformat())
+            params.append(1)
+            cursor.execute(
+                f"UPDATE enrichment_state SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            conn.commit()
+
+    def get_admin_enrichment_state(self) -> dict:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT is_enabled_admin FROM enrichment_state ORDER BY id DESC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            if row:
+                return {"is_enabled_admin": bool(row[0])}
+            return {"is_enabled_admin": True}
+
+    def update_admin_enrichment_state(self, is_enabled: bool = None) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            updates = []
+            params = []
+            if is_enabled is not None:
+                updates.append("is_enabled_admin = ?")
                 params.append(is_enabled)
             updates.append("updated_at = ?")
             params.append(datetime.now(timezone.utc).isoformat())

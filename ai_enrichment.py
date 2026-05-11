@@ -123,6 +123,7 @@ class MessageBuffer:
 
 
 buffer = MessageBuffer()
+admin_buffer = MessageBuffer()
 
 
 def compute_content_hash(messages: list) -> str:
@@ -560,15 +561,24 @@ async def send_discussion_poll(
         logger.error(f"[Enrichment] Failed to send poll: {e}")
 
 
-async def process_enrichment(message_data: dict, bot) -> None:
-    state = db.get_enrichment_state()
-    if not state["is_enabled"]:
-        return
+async def process_enrichment(
+    message_data: dict, bot, group_type: str = "target"
+) -> None:
+    if group_type == "admin":
+        state = db.get_admin_enrichment_state()
+        if not state["is_enabled_admin"]:
+            return
+        active_buffer = admin_buffer
+    else:
+        state = db.get_enrichment_state()
+        if not state["is_enabled"]:
+            return
+        active_buffer = buffer
 
-    buffer.add_message(message_data)
-    buffer.clear_old_messages()
+    active_buffer.add_message(message_data)
+    active_buffer.clear_old_messages()
 
-    context_window = buffer.get_context_window()
+    context_window = active_buffer.get_context_window()
     if not context_window:
         return
 
@@ -748,7 +758,7 @@ async def process_enrichment(message_data: dict, bot) -> None:
             raise
 
     last_msg = context_window[-1]
-    buffer.mark_processed_up_to(last_msg["message_id"])
+    active_buffer.mark_processed_up_to(last_msg["message_id"])
 
     db.record_enrichment_reply(
         [msg["message_id"] for msg in context_window],
