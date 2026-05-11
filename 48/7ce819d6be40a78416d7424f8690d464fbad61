@@ -1,0 +1,33 @@
+ai_enrichment.py
+  s_9d3a64dc13c1e5::t_12e0a707d179c4 761
+  s_9d3a64dc13c1e5::t_49415dd9cb6801 564-576,578-579,581
+  s_9d3a64dc13c1e5::t_67e5e276c4999e 126
+database.py
+  s_9d3a64dc13c1e5::t_8a5e06356ec596 150-151,154,159-165
+  s_9d3a64dc13c1e5::t_a664baa8e4079e 498-525
+bot.py
+  s_9d3a64dc13c1e5::t_914b8108b5afc4 1510-1514
+  s_9d3a64dc13c1e5::t_5b86d93c114c07 1632-1635
+  s_9d3a64dc13c1e5::t_07b5ec0683f316 47
+  s_9d3a64dc13c1e5::t_6254700f7bc68e 1392-1416
+  s_9d3a64dc13c1e5::t_ef69af5aea82c7 823-829
+  s_9d3a64dc13c1e5::t_043bcaa84aabcc 1608-1621,1630-1631,1636
+  s_9d3a64dc13c1e5::t_b4b030fe66d45e 1452-1469
+  s_9d3a64dc13c1e5::t_4c1fffd1f58970 1440-1443,1445-1448
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "487ce819d6be40a78416d7424f8690d464fbad61",
+  "prompts": {},
+  "sessions": {
+    "s_9d3a64dc13c1e5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1e8e1d60cffeBB7UxXSMEdg1ps",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
