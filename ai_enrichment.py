@@ -289,6 +289,21 @@ if OPENAI_API_KEY:
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
+class URLScore(BaseModel):
+    score: float
+    reason: str
+    topic: str
+    search_queries: list[str] = Field(default_factory=list)
+
+
+class WorthinessResult(BaseModel):
+    should_reply: bool
+    confidence: float
+    reason: str
+    topic: str
+    search_queries: list[str] = Field(default_factory=list)
+
+
 def _classify_worthiness_openai(context_text: str) -> WorthinessResult:
     client = _create_openai_instructor()
     result = client.chat.completions.create(
@@ -491,21 +506,6 @@ def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
             if overlap > 0.7:
                 return True
     return False
-
-
-class URLScore(BaseModel):
-    score: float
-    reason: str
-    topic: str
-    search_queries: list[str] = Field(default_factory=list)
-
-
-class WorthinessResult(BaseModel):
-    should_reply: bool
-    confidence: float
-    reason: str
-    topic: str
-    search_queries: list[str] = Field(default_factory=list)
 
 
 def _score_url_content_openai(url: str, content: str) -> URLScore:
