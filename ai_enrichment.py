@@ -114,21 +114,26 @@ ENRICHMENT_REPLY_SYSTEM_PROMPT = """You are a concise context-enrichment assista
 
 Given a group conversation and retrieved context, write a brief enrichment reply.
 
-FORMAT RULES:
-- Structure the reply as a short introductory sentence followed by bullet points (•) for key facts, features, or details.
-- Use emoji sparingly as bullet prefixes ONLY when they genuinely aid scannability (e.g. 🔍 for search-related, 🛠️ for tools, ⚡ for highlights, 📊 for data). Do NOT emoji-spam — max 1 emoji per bullet, skip emoji if none fits naturally.
-- Aim for 4-8 bullet points max. Each bullet should be ONE concise point, not a run-on sentence.
-- If the topic is simple enough that bullets add no value, a short paragraph is fine.
+FORMAT — follow this structure exactly:
+1. One concise intro sentence summarizing what this is about
+2. Up to 3 bullet points (•), each covering one key fact or detail. Use fewer if the topic is simple.
+3. One "Source:" line with the single best source link
 
-CONTENT RULES:
-- Be factual and informative, not conversational
-- Do NOT ask follow-up questions
-- Do NOT give opinions or say "I think"
-- Do NOT cite sources inline within the text. Write the enrichment content cleanly without any links or source names in the body.
-- After the body text, add a blank line, then "Sources:" on its own line, followed by bullet points. ALWAYS use bullet points for sources regardless of count. Example:\nSources:\n• [name1](url1)\n• [name2](url2)
-- Each source URL should appear only ONCE in the sources line, never repeated.
-- Do NOT repeat what was already said in the conversation
-- Write in a neutral, informative tone
+MONOSPACE TABLES:
+- If comparing features, benchmarks, or data across items, use a monospace table inside a bullet.
+- Use backtick fences with aligned columns. Example:
+  `Metric   | Tool A | Tool B`
+  `---------|--------|--------`
+  `Speed    | Fast   | Slow  `
+
+STYLE RULES:
+- Max 1 emoji per bullet, only if it genuinely aids scanning. Skip emoji if none fits.
+- Each bullet: ONE concise point, not a run-on sentence.
+- Pick the single most authoritative source. Format: Source: [title](url)
+- Do NOT cite sources inline in the body text.
+- Be factual, informative, neutral tone.
+- Do NOT ask follow-up questions or give opinions.
+- Do NOT repeat what was already said in the conversation.
 - If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
 
 
@@ -284,17 +289,17 @@ if OPENAI_API_KEY:
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def _classify_worthiness_openai(context_text: str) -> dict:
-    response = openai_client.responses.create(
-        model=OPENAI_ENRICHMENT_MODEL,
-        instructions=WORTHINESS_SYSTEM_PROMPT,
-        input=context_text,
+def _classify_worthiness_openai(context_text: str) -> WorthinessResult:
+    client = _create_openai_instructor()
+    result = client.chat.completions.create(
+        response_model=WorthinessResult,
+        messages=[
+            {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
+            {"role": "user", "content": context_text},
+        ],
+        max_retries=2,
     )
-    raw = response.output_text.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```\w*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-    return json.loads(raw)
+    return result
 
 
 def _generate_enrichment_reply_openai(
@@ -323,22 +328,19 @@ Based on the conversation and the retrieved context, write a concise enrichment 
 
 def classify_worthiness(context_text: str) -> dict:
     try:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_ENRICHMENT_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=WORTHINESS_SYSTEM_PROMPT,
-                temperature=0.1,
-            ),
-            contents=context_text,
-        )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```\w*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
-        result = json.loads(raw)
-        logger.info("[Enrichment] classify_worthiness succeeded via Gemini")
-        return result
-    except (json.JSONDecodeError, Exception) as e:
+        client = _create_gemini_instructor()
+        if client:
+            result = client.chat.completions.create(
+                response_model=WorthinessResult,
+                messages=[
+                    {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
+                    {"role": "user", "content": context_text},
+                ],
+                max_retries=2,
+            )
+            logger.info("[Enrichment] classify_worthiness succeeded via Gemini (instructor)")
+            return result.model_dump()
+    except Exception as e:
         logger.warning(f"[Enrichment] Gemini classify_worthiness failed: {e}")
 
     if openai_client:
@@ -347,7 +349,7 @@ def classify_worthiness(context_text: str) -> dict:
             logger.info(
                 "[Enrichment] classify_worthiness succeeded via OpenAI (fallback)"
             )
-            return result
+            return result.model_dump()
         except Exception as e:
             logger.error(
                 f"[Enrichment] OpenAI classify_worthiness fallback also failed: {e}"
@@ -422,7 +424,7 @@ def _escape_md_v2(text: str) -> str:
 
 _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 _BULLET_RE = re.compile(r"^[\s]*[•\-]\s*", re.MULTILINE)
-_SOURCE_HEADER_RE = re.compile(r"^Sources:\s*(.*)$", re.MULTILINE)
+_SOURCE_HEADER_RE = re.compile(r"^Sources?:\s*(.*)$", re.MULTILINE)
 
 
 def format_reply_for_telegram(raw_reply: str) -> str:
@@ -455,10 +457,15 @@ def format_reply_for_telegram(raw_reply: str) -> str:
             if link_match:
                 link_text = _escape_md_v2(link_match.group(1))
                 link_url = link_match.group(2)
-                formatted_sources.append(f"  \\- [{link_text}]({link_url})")
+                formatted_sources.append(f"[{link_text}]({link_url})")
             else:
-                formatted_sources.append(f"  \\- {_escape_md_v2(line)}")
-        sources_block = "\\-\\-\\-\n*Sources*:\n" + "\n".join(formatted_sources)
+                formatted_sources.append(_escape_md_v2(line))
+
+        if len(formatted_sources) == 1:
+            sources_block = f"*Source*: {formatted_sources[0]}"
+        else:
+            bulleted = [f"  \\- {s}" for s in formatted_sources]
+            sources_block = "\\-\\-\\-\n*Sources*:\n" + "\n".join(bulleted)
     else:
         sources_block = ""
 
@@ -493,42 +500,45 @@ class URLScore(BaseModel):
     search_queries: list[str] = Field(default_factory=list)
 
 
+class WorthinessResult(BaseModel):
+    should_reply: bool
+    confidence: float
+    reason: str
+    topic: str
+    search_queries: list[str] = Field(default_factory=list)
+
+
 def _score_url_content_openai(url: str, content: str) -> URLScore:
     prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
-    response = openai_client.responses.create(
-        model=OPENAI_ENRICHMENT_MODEL,
-        instructions=URL_SCORING_SYSTEM_PROMPT,
-        input=prompt,
+    client = _create_openai_instructor()
+    result = client.chat.completions.create(
+        response_model=URLScore,
+        messages=[
+            {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        max_retries=2,
     )
-    raw = response.output_text.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```\w*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-    data = json.loads(raw)
-    return URLScore(**data)
+    return result
 
 
 def score_url_content(url: str, content: str) -> URLScore:
     prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
     try:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_ENRICHMENT_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=URL_SCORING_SYSTEM_PROMPT,
-                temperature=0.1,
-            ),
-            contents=prompt,
-        )
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```\w*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
-        data = json.loads(raw)
-        result = URLScore(**data)
-        logger.info(
-            f"[Enrichment] score_url_content succeeded via Gemini: score={result.score:.2f} ({result.reason})"
-        )
-        return result
+        client = _create_gemini_instructor()
+        if client:
+            result = client.chat.completions.create(
+                response_model=URLScore,
+                messages=[
+                    {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                max_retries=2,
+            )
+            logger.info(
+                f"[Enrichment] score_url_content succeeded via Gemini (instructor): score={result.score:.2f} ({result.reason})"
+            )
+            return result
     except Exception as e:
         logger.warning(f"[Enrichment] Gemini score_url_content failed: {e}")
 
