@@ -821,11 +821,13 @@ Note: Each invite link can only be used once and expires after use.
 /reset\\_pending\\_approval - Clear all pending approval records
 
 *AI Enrichment Commands:*
-/enable\\_insights - Enable AI enrichment in target group
-/disable\\_insights - Disable AI enrichment in target group
-/enable\\_admin\\_insights - Enable AI enrichment in admin group
-/disable\\_admin\\_insights - Disable AI enrichment in admin group
+/enable\\_ai\\_insights - Enable AI enrichment in target group
+/disable\\_ai\\_insights - Disable AI enrichment in target group
+/enable\\_admin\\_ai\\_insights - Enable AI enrichment in admin group
+/disable\\_admin\\_ai\\_insights - Disable AI enrichment in admin group
 /insights\\_status - Check enrichment status for all groups
+/enable\\_ai\\_context\\_window - Enable context window trigger \\(non\\-URL\\)
+/disable\\_ai\\_context\\_window - Disable context window trigger \\(URL\\-only mode\\)
 
 *Audio Processing Commands:*
 /transcribe\\_audio - Start audio transcription
@@ -1439,12 +1441,15 @@ async def enrichment_status_command(
         return
     target_state = db.get_enrichment_state()
     admin_state = db.get_admin_enrichment_state()
+    ctx_state = db.get_context_window_enrichment_state()
     target_status = "enabled" if target_state["is_enabled"] else "disabled"
     admin_status = "enabled" if admin_state["is_enabled_admin"] else "disabled"
+    ctx_status = "enabled" if ctx_state["is_context_window_enabled"] else "disabled"
     await update.message.reply_text(
         f"AI enrichment status:\n"
         f"• Target group: {target_status}\n"
-        f"• Admin group: {admin_status}\n\n"
+        f"• Admin group: {admin_status}\n"
+        f"• Context window trigger: {ctx_status}\n\n"
         f"Last processed message ID (target): {target_state['last_processed_message_id']}"
     )
 
@@ -1465,6 +1470,26 @@ async def disable_admin_insights_command(
         return
     db.update_admin_enrichment_state(is_enabled=False)
     await update.message.reply_text("AI context enrichment disabled for admin group.")
+
+
+async def enable_context_enrichment_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    db.update_context_window_enrichment_state(is_enabled=True)
+    await update.message.reply_text("Context window AI enrichment trigger enabled.")
+
+
+async def disable_context_enrichment_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        return
+    db.update_context_window_enrichment_state(is_enabled=False)
+    await update.message.reply_text(
+        "Context window AI enrichment trigger disabled. Only URL-based enrichment active."
+    )
 
 
 def reset_active_transcriptions():
@@ -1507,11 +1532,13 @@ def main() -> None:
         ("stats", "Show current statistics"),
         ("transcribe_audio", "Transcribe an audio file"),
         ("check_transcription_status", "Check status of ongoing transcription"),
-        ("enable_insights", "Enable AI enrichment (target group)"),
-        ("disable_insights", "Disable AI enrichment (target group)"),
+        ("enable_ai_insights", "Enable AI enrichment (target group)"),
+        ("disable_ai_insights", "Disable AI enrichment (target group)"),
         ("insights_status", "Check AI enrichment status (all groups)"),
-        ("enable_admin_insights", "Enable AI enrichment (admin group)"),
-        ("disable_admin_insights", "Disable AI enrichment (admin group)"),
+        ("enable_admin_ai_insights", "Enable AI enrichment (admin group)"),
+        ("disable_admin_ai_insights", "Disable AI enrichment (admin group)"),
+        ("enable_ai_context_window", "Enable context window AI trigger"),
+        ("disable_ai_context_window", "Disable context window AI trigger"),
     ]
     # Set up commands for regular users
     user_commands = [
@@ -1592,12 +1619,12 @@ def main() -> None:
     )
     application.add_handler(
         CommandHandler(
-            "enable_insights", enable_enrichment_command, filters=admin_group_filter
+            "enable_ai_insights", enable_enrichment_command, filters=admin_group_filter
         )
     )
     application.add_handler(
         CommandHandler(
-            "disable_insights", disable_enrichment_command, filters=admin_group_filter
+            "disable_ai_insights", disable_enrichment_command, filters=admin_group_filter
         )
     )
     application.add_handler(
@@ -1607,15 +1634,29 @@ def main() -> None:
     )
     application.add_handler(
         CommandHandler(
-            "enable_admin_insights",
+            "enable_admin_ai_insights",
             enable_admin_insights_command,
             filters=admin_group_filter,
         )
     )
     application.add_handler(
         CommandHandler(
-            "disable_admin_insights",
+            "disable_admin_ai_insights",
             disable_admin_insights_command,
+            filters=admin_group_filter,
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "enable_ai_context_window",
+            enable_context_enrichment_command,
+            filters=admin_group_filter,
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "disable_ai_context_window",
+            disable_context_enrichment_command,
             filters=admin_group_filter,
         )
     )

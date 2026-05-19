@@ -13,6 +13,7 @@ from google.genai import types
 from openai import OpenAI
 from pydantic import BaseModel, Field
 import instructor
+from telegram import LinkPreviewOptions
 
 from config import (
     GEMINI_API_KEY,
@@ -25,6 +26,21 @@ from config import (
 from database import db
 
 logger = logging.getLogger(__name__)
+
+URL_SCORE_THRESHOLD = 0.65
+
+URL_SCORING_SYSTEM_PROMPT = """You are evaluating whether the content from a URL is worth enriching for a high-signal tech/AI/startup community.
+
+Score the content from 0.0 to 1.0:
+- 0.8-1.0: Highly substantive — research paper, major tech announcement, detailed analysis, significant news event
+- 0.65-0.79: Good — technical blog post, product launch, industry news with depth
+- 0.4-0.64: Borderline — light news, brief announcements, opinion pieces with limited facts
+- 0.0-0.39: Not worth it — paywall/empty content, social media posts, trivial content, memes, transaction pages, profile pages, raw blockchain data
+
+Respond with ONLY valid JSON (no markdown, no code fences):
+{"score": 0.0-1.0, "reason": "brief explanation", "topic": "brief topic description", "search_queries": ["query1", "query2"]}
+
+search_queries should be 1-3 specific queries to find additional context about this topic. Leave as [] if the fetched content is already comprehensive."""
 
 WORTHINESS_SYSTEM_PROMPT = """You are a conversation classifier for a high-signal tech/AI/startup community group.
 
@@ -442,6 +458,67 @@ def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
     return False
 
 
+class URLScore(BaseModel):
+    score: float
+    reason: str
+    topic: str
+    search_queries: list[str] = Field(default_factory=list)
+
+
+def _score_url_content_openai(url: str, content: str) -> URLScore:
+    prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
+    response = openai_client.responses.create(
+        model=OPENAI_ENRICHMENT_MODEL,
+        instructions=URL_SCORING_SYSTEM_PROMPT,
+        input=prompt,
+    )
+    raw = response.output_text.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```\w*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    data = json.loads(raw)
+    return URLScore(**data)
+
+
+def score_url_content(url: str, content: str) -> URLScore:
+    prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_ENRICHMENT_MODEL,
+            config=types.GenerateContentConfig(
+                system_instruction=URL_SCORING_SYSTEM_PROMPT,
+                temperature=0.1,
+            ),
+            contents=prompt,
+        )
+        raw = response.text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```\w*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        data = json.loads(raw)
+        result = URLScore(**data)
+        logger.info(
+            f"[Enrichment] score_url_content succeeded via Gemini: score={result.score:.2f} ({result.reason})"
+        )
+        return result
+    except Exception as e:
+        logger.warning(f"[Enrichment] Gemini score_url_content failed: {e}")
+
+    if openai_client:
+        try:
+            result = _score_url_content_openai(url, content)
+            logger.info(
+                f"[Enrichment] score_url_content succeeded via OpenAI (fallback): score={result.score:.2f}"
+            )
+            return result
+        except Exception as e:
+            logger.error(
+                f"[Enrichment] OpenAI score_url_content fallback also failed: {e}"
+            )
+
+    return URLScore(score=0.0, reason="scoring_error", topic="", search_queries=[])
+
+
 class PollEvaluation(BaseModel):
     should_create_poll: bool
     question: Optional[str] = None
@@ -629,92 +706,160 @@ async def process_enrichment(
         if msg.get("text"):
             urls.extend(extract_urls(msg["text"]))
 
-    url_previews = ""
+    url_contents: dict[str, str] = {}
     if urls:
         logger.info(
-            f"[Enrichment] Pre-fetching {len(urls[:2])} URLs before classification: {urls[:2]}"
+            f"[Enrichment] Fetching {len(urls[:2])} URLs: {urls[:2]}"
         )
         for url in urls[:2]:
             content = await loop.run_in_executor(None, fetch_url_content, url)
             if content:
-                url_previews += f"\n\n--- Content from {url} ---\n{content}"
+                url_contents[url] = content
                 logger.info(
-                    f"[Enrichment]   Pre-fetched {len(content)} chars from {url}"
+                    f"[Enrichment]   Fetched {len(content)} chars from {url}"
                 )
             else:
                 logger.info(f"[Enrichment]   No content extracted from {url}")
 
-    if url_previews:
-        classification_input = (
-            f"{context_text}\n\n<url_previews>{url_previews}</url_previews>"
-        )
-    else:
-        classification_input = context_text
-
-    classification = await loop.run_in_executor(
-        None, classify_worthiness, classification_input
-    )
-
-    should_reply = classification.get("should_reply", False)
-    confidence = classification.get("confidence", 0.0)
-    reason = classification.get("reason", "unknown")
-    topic = classification.get("topic", "")
-    search_queries = classification.get("search_queries", [])
-
-    logger.info(
-        f"[Enrichment] Classification: should_reply={should_reply}, confidence={confidence:.2f}, reason={reason}, topic='{topic}', search_queries={search_queries}"
-    )
-
-    db.record_processed_window(
-        [msg["message_id"] for msg in context_window],
-        content_hash,
-        should_reply,
-        reason,
-    )
-
-    min_confidence = 0.75 if reason == "url_shared" else 0.8
-    if not should_reply or confidence < min_confidence:
-        logger.info(
-            f"[Enrichment] Not worthy (confidence={confidence:.2f} < {min_confidence} for reason={reason} or should_reply={should_reply}). Skipping."
-        )
-        return
-
-    recent_topics = db.get_recent_reply_topics(limit=10)
-    if is_semantically_duplicate(topic, recent_topics):
-        logger.info(
-            f"[Enrichment] Skipping duplicate topic: '{topic}' (matched against recent {len(recent_topics)} topics)"
-        )
-        return
-
     retrieved_context = ""
+    topic = ""
+    reason = "unknown"
 
-    if url_previews and reason == "url_shared":
-        logger.info("[Enrichment] Reusing pre-fetched URL content for enrichment")
+    if url_contents:
+        # URL-first path: score each fetched URL, pick the best
+        best_score_result: Optional[URLScore] = None
+        for url, content in url_contents.items():
+            score_result = await loop.run_in_executor(
+                None, score_url_content, url, content
+            )
+            logger.info(
+                f"[Enrichment] URL score for {url[:80]}: {score_result.score:.2f} ({score_result.reason})"
+            )
+            if best_score_result is None or score_result.score > best_score_result.score:
+                best_score_result = score_result
+
+        if best_score_result.score < URL_SCORE_THRESHOLD:
+            logger.info(
+                f"[Enrichment] Best URL score {best_score_result.score:.2f} below threshold {URL_SCORE_THRESHOLD}. Skipping."
+            )
+            db.record_processed_window(
+                [msg["message_id"] for msg in context_window],
+                content_hash,
+                False,
+                "url_score_below_threshold",
+            )
+            return
+
+        topic = best_score_result.topic
+        search_queries = best_score_result.search_queries
+        reason = "url_shared"
+        logger.info(
+            f"[Enrichment] URL score sufficient ({best_score_result.score:.2f}). Topic: '{topic}'"
+        )
+
+        recent_topics = db.get_recent_reply_topics(limit=10)
+        if is_semantically_duplicate(topic, recent_topics):
+            logger.info(
+                f"[Enrichment] Skipping duplicate topic: '{topic}' (matched against recent {len(recent_topics)} topics)"
+            )
+            return
+
+        # Build retrieved context from fetched URL content
+        url_previews = ""
+        for url, content in url_contents.items():
+            url_previews += f"\n\n--- Content from {url} ---\n{content}"
         retrieved_context = url_previews
 
-    if not retrieved_context and search_queries:
-        logger.info(
-            f"[Enrichment] URL extraction empty, falling back to web search: {len(search_queries[:3])} queries: {search_queries[:3]}"
+        # Augment with web search if queries provided
+        if search_queries:
+            logger.info(
+                f"[Enrichment] Running {len(search_queries[:3])} search queries to augment URL content: {search_queries[:3]}"
+            )
+            seen_urls = set(url_contents.keys())
+            for query in search_queries[:3]:
+                results = await loop.run_in_executor(None, search_web, query, 3)
+                logger.info(f"[Enrichment]   Query '{query}': {len(results)} results")
+                for r in results:
+                    if r["url"] not in seen_urls:
+                        seen_urls.add(r["url"])
+                        logger.info(
+                            f"[Enrichment]     Result: title='{r['title'][:80]}' url='{r['url'][:80]}' content_len={len(r['content'])} content_preview='{r['content'][:120]}'"
+                        )
+                        retrieved_context += f"\n- {r['title']} ({r['url']}): {r['content']}\n"
+                await asyncio.sleep(1)
+
+        db.record_processed_window(
+            [msg["message_id"] for msg in context_window],
+            content_hash,
+            True,
+            reason,
         )
-        all_results = []
-        for query in search_queries[:3]:
-            results = await loop.run_in_executor(None, search_web, query, 3)
-            all_results.extend(results)
-            logger.info(f"[Enrichment]   Query '{query}': {len(results)} results")
-            await asyncio.sleep(1)
 
-        seen_urls = set()
-        for r in all_results:
-            if r["url"] not in seen_urls:
-                seen_urls.add(r["url"])
-                logger.info(
-                    f"[Enrichment]     Result: title='{r['title'][:80]}' url='{r['url'][:80]}' content_len={len(r['content'])} content_preview='{r['content'][:120]}'"
-                )
-                retrieved_context += f"\n- {r['title']} ({r['url']}): {r['content']}\n"
+    else:
+        # Non-URL path: use classify_worthiness on conversation context
+        classification = await loop.run_in_executor(
+            None, classify_worthiness, context_text
+        )
 
-    if not retrieved_context:
-        logger.info("[Enrichment] No context retrieved. Skipping reply.")
-        return
+        should_reply = classification.get("should_reply", False)
+        confidence = classification.get("confidence", 0.0)
+        reason = classification.get("reason", "unknown")
+        topic = classification.get("topic", "")
+        search_queries = classification.get("search_queries", [])
+
+        logger.info(
+            f"[Enrichment] Classification: should_reply={should_reply}, confidence={confidence:.2f}, reason={reason}, topic='{topic}', search_queries={search_queries}"
+        )
+
+        db.record_processed_window(
+            [msg["message_id"] for msg in context_window],
+            content_hash,
+            should_reply,
+            reason,
+        )
+
+        if reason != "url_shared" and not db.get_context_window_enrichment_state()["is_context_window_enabled"]:
+            logger.info(
+                f"[Enrichment] Context window trigger disabled. Skipping non-URL reason='{reason}'."
+            )
+            return
+
+        if not should_reply or confidence < 0.8:
+            logger.info(
+                f"[Enrichment] Not worthy (confidence={confidence:.2f} < 0.8 or should_reply={should_reply}). Skipping."
+            )
+            return
+
+        recent_topics = db.get_recent_reply_topics(limit=10)
+        if is_semantically_duplicate(topic, recent_topics):
+            logger.info(
+                f"[Enrichment] Skipping duplicate topic: '{topic}' (matched against recent {len(recent_topics)} topics)"
+            )
+            return
+
+        if search_queries:
+            logger.info(
+                f"[Enrichment] Running {len(search_queries[:3])} web search queries: {search_queries[:3]}"
+            )
+            all_results = []
+            for query in search_queries[:3]:
+                results = await loop.run_in_executor(None, search_web, query, 3)
+                all_results.extend(results)
+                logger.info(f"[Enrichment]   Query '{query}': {len(results)} results")
+                await asyncio.sleep(1)
+
+            seen_urls: set[str] = set()
+            for r in all_results:
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
+                    logger.info(
+                        f"[Enrichment]     Result: title='{r['title'][:80]}' url='{r['url'][:80]}' content_len={len(r['content'])} content_preview='{r['content'][:120]}'"
+                    )
+                    retrieved_context += f"\n- {r['title']} ({r['url']}): {r['content']}\n"
+
+        if not retrieved_context:
+            logger.info("[Enrichment] No context retrieved. Skipping reply.")
+            return
 
     logger.info(
         f"[Enrichment] Retrieved {len(retrieved_context)} chars of context. Generating reply..."
@@ -739,6 +884,7 @@ async def process_enrichment(
             text=formatted_text,
             parse_mode="MarkdownV2",
             disable_notification=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     except Exception as e:
         if (
@@ -753,6 +899,7 @@ async def process_enrichment(
                 chat_id=message_data["chat_id"],
                 text=reply_text,
                 disable_notification=True,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
         else:
             raise

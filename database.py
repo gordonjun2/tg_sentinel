@@ -163,6 +163,10 @@ class Database:
                     cursor.execute(
                         "ALTER TABLE enrichment_state ADD COLUMN is_enabled_admin BOOLEAN DEFAULT 1"
                     )
+                if "is_context_window_enabled" not in columns:
+                    cursor.execute(
+                        "ALTER TABLE enrichment_state ADD COLUMN is_context_window_enabled BOOLEAN DEFAULT 0"
+                    )
 
             cursor.execute("""
                 SELECT name FROM sqlite_master WHERE type='table' AND name='enrichment_replies'
@@ -520,6 +524,26 @@ class Database:
             cursor.execute(
                 f"UPDATE enrichment_state SET {', '.join(updates)} WHERE id = ?",
                 params,
+            )
+            conn.commit()
+
+    def get_context_window_enrichment_state(self) -> dict:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT is_context_window_enabled FROM enrichment_state ORDER BY id DESC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            if row:
+                return {"is_context_window_enabled": bool(row[0])}
+            return {"is_context_window_enabled": False}
+
+    def update_context_window_enrichment_state(self, is_enabled: bool) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE enrichment_state SET is_context_window_enabled = ?, updated_at = ? WHERE id = 1",
+                (is_enabled, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
 
