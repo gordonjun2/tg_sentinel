@@ -32,10 +32,38 @@ URL_SCORE_THRESHOLD = 0.65
 URL_SCORING_SYSTEM_PROMPT = """You are evaluating whether the content from a URL is worth enriching for a high-signal tech/AI/startup community.
 
 Score the content from 0.0 to 1.0:
-- 0.8-1.0: Highly substantive — research paper, major tech announcement, detailed analysis, significant news event
-- 0.65-0.79: Good — technical blog post, product launch, industry news with depth
-- 0.4-0.64: Borderline — light news, brief announcements, opinion pieces with limited facts
-- 0.0-0.39: Not worth it — paywall/empty content, social media posts, trivial content, memes, transaction pages, profile pages, raw blockchain data
+- 0.8-1.0: Highly substantive AND technically deep — research paper with methodology/results, major tech announcement with engineering detail, in-depth technical analysis with specific data, architecture breakdowns, benchmark results
+- 0.65-0.79: Good — technical blog post with practical depth, dev tool or API launch with real usage detail, startup/product launch with novel technical approach, tech industry analysis with concrete data points
+- 0.4-0.64: Borderline — general business/finance news about tech companies (no technical depth), celebrity/entertainment news, light opinion pieces, brief tech news without substance, political news tangentially related to tech
+- 0.0-0.39: Not worth it — non-tech news (sports, lifestyle, gossip), paywall/empty content, social media posts, trivial content, memes, transaction pages, profile pages, raw blockchain data, listicles without depth
+
+CRITICAL: High scores (0.7+) require genuine TECHNICAL depth or significant tech-industry impact. General news about tech companies (earnings reports, executive changes, legal disputes) without technical substance should score 0.4-0.6. Non-tech topics (politics, sports, entertainment, lifestyle, health, crime) should score below 0.4 regardless of article quality.
+
+Few-shot examples:
+
+Example 1 — Score: 0.92
+Content: A research paper introducing a new LLM quantization method, including mathematical formulations, benchmark comparisons across multiple models (Llama 3, Mistral, Gemma), latency measurements, and ablation studies showing 2.3x inference speedup with <1% accuracy loss.
+Output: {"score": 0.92, "reason": "Research paper with deep technical content: methodology, benchmarks, and quantitative results on LLM quantization", "topic": "New LLM quantization method with 2.3x speedup", "search_queries": ["LLM quantization methods 2025", "model compression inference speedup"]}
+
+Example 2 — Score: 0.78
+Content: A detailed blog post by an engineering team explaining their migration from a monolith to microservices, covering service boundaries, event-driven architecture choices, specific technologies used (Kafka, gRPC), observability stack, and lessons learned with concrete metrics (p99 latency dropped from 800ms to 120ms).
+Output: {"score": 0.78, "reason": "Technical blog post with practical engineering depth, specific architecture decisions, and measurable outcomes", "topic": "Microservices migration with measurable performance improvements", "search_queries": ["monolith to microservices migration patterns", "event-driven architecture Kafka gRPC"]}
+
+Example 3 — Score: 0.52
+Content: A news article reporting that Apple's revenue increased 15% in Q3, discussing iPhone sales figures, services growth, and analyst reactions. No technical content about products or engineering.
+Output: {"score": 0.52, "reason": "General business/financial news about a tech company with no technical depth or engineering substance", "topic": "Apple Q3 earnings report", "search_queries": []}
+
+Example 4 — Score: 0.30
+Content: An article about a celebrity's new diet and workout routine, with quotes from their trainer and meal plan details.
+Output: {"score": 0.30, "reason": "Non-tech celebrity/lifestyle content with zero relevance to tech/AI/startup community", "topic": "Celebrity fitness routine", "search_queries": []}
+
+Example 5 — Score: 0.25
+Content: A political news article about election polling results and campaign strategies in an upcoming national election. No tech policy or tech industry implications discussed.
+Output: {"score": 0.25, "reason": "Pure political news with no tech angle, no technical depth, irrelevant to tech community", "topic": "National election polling", "search_queries": []}
+
+Example 6 — Score: 0.85
+Content: A detailed announcement of a new open-source framework for building AI agents, including architecture overview, code examples, comparison with LangChain/CrewAI, supported LLM providers, tool-use patterns, and benchmark results on standard agent evaluation suites.
+Output: {"score": 0.85, "reason": "Major tech product launch with substantial technical detail: architecture, code examples, benchmarks, and competitive analysis", "topic": "New open-source AI agent framework", "search_queries": ["AI agent frameworks comparison 2025", "open source agent orchestration tools"]}
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {"score": 0.0-1.0, "reason": "brief explanation", "topic": "brief topic description", "search_queries": ["query1", "query2"]}
@@ -521,6 +549,7 @@ def score_url_content(url: str, content: str) -> URLScore:
 
 class PollEvaluation(BaseModel):
     should_create_poll: bool
+    confidence_score: Optional[float] = Field(default=None, ge=0, le=1)
     question: Optional[str] = None
     options: Optional[list[str]] = Field(default=None, min_length=2, max_length=5)
     allows_multiple_answers: Optional[bool] = None
@@ -531,16 +560,21 @@ POLL_EVALUATION_SYSTEM_PROMPT = """You are a community engagement assistant for 
 Given a group conversation, its topic, and some retrieved context, decide whether this topic would spark fun, engaging discussion via a poll.
 
 A GOOD poll candidate:
-- The topic has clear alternatives, choices, or opinions people would enjoy weighing in on
-- The question can be phrased in a fun, casual, or light-hearted way
-- It invites community participation and gets people talking
-- Examples: "Which tool do you actually use?", "What's your take on X?", "If you could only pick one...", "Which trend are you betting on?"
+- The topic has genuine opinion splits — reasonable people can disagree
+- There are clear alternatives, choices, or debates people would enjoy weighing in on
+- The question invites strong takes and personal experience, not just factual recall
+- Examples: tool/framework preferences, prediction-based questions, approach comparisons, "hot take" topics where devs have real opinions
 
 A BAD poll candidate:
-- Topics that are purely factual with no opinion angle
-- Topics too niche or technical for most people to have a take on
+- Topics that are purely factual with no opinion angle (e.g. "What is the capital of France?")
+- Topics where there is a clearly correct answer (e.g. "Which sorting algorithm is O(n log n)?")
+- Announcements or news that people would just read, not debate
+- Topics too niche for most people to have a personal take on
 - Topics where all options would be essentially the same
 - The conversation was just casual chatter with no substantive angle
+- Company funding announcements, product releases without a debate angle
+
+KEY TEST: Would two reasonable, informed people naturally disagree about this? If the answer is clearly one-sided or purely factual, do NOT create a poll.
 
 TONE: Keep it fun, light-hearted, and community-friendly. The question should feel like a friend asking, not a survey. Use casual phrasing. Feel free to be playful.
 
@@ -549,8 +583,42 @@ RULES:
 - Each option should be short (under 8 words ideally)
 - For "pick one" or "which is best" questions, set allows_multiple_answers to false
 - For "which ones interest you" or "select all that apply" questions, set allows_multiple_answers to true
-- Be CONSERVATIVE — roughly only 30% of topics should get a poll. When in doubt, set should_create_poll to false.
-- If should_create_poll is false, leave question, options, and allows_multiple_answers as null."""
+- Be VERY CONSERVATIVE — only ~15-20% of topics should get a poll. When in doubt, set should_create_poll to false.
+- If should_create_poll is false, leave question, options, and allows_multiple_answers as null.
+
+Few-shot examples:
+
+Example 1 — GOOD poll (genuine opinion split):
+Topic: Discussion about whether to use TypeScript or Python for a new AI startup's backend. People are debating type safety vs. iteration speed.
+Output: {"should_create_poll": true, "confidence_score": 0.88, "question": "Building an AI startup backend — what's your go-to?", "options": ["TypeScript all the way", "Python for ML flexibility", "Go for performance", "Mix and match per service"], "allows_multiple_answers": false}
+
+Example 2 — GOOD poll (prediction-based debate):
+Topic: Conversation about whether AI agents will replace most SaaS tools within 3 years. Strong arguments on both sides.
+Output: {"should_create_poll": true, "confidence_score": 0.85, "question": "Will AI agents kill most SaaS tools by 2028?", "options": ["Absolutely, adapt or die", "Nah, SaaS will evolve alongside", "Only the simple ones", "Too early to tell"], "allows_multiple_answers": false}
+
+Example 3 — BAD poll (factual news, no debate):
+Topic: A company just raised a $50M Series B. The conversation is about the funding round details.
+Output: {"should_create_poll": false, "confidence_score": 0.2, "question": null, "options": null, "allows_multiple_answers": null}
+Reason: Funding announcements are factual news — no opinion angle or debate. People would just read about it, not argue.
+
+Example 4 — BAD poll (correct answer exists):
+Topic: Technical discussion about which data structure has O(1) lookup time.
+Output: {"should_create_poll": false, "confidence_score": 0.1, "question": null, "options": null, "allows_multiple_answers": null}
+Reason: This has a clearly correct answer (hash table). Not opinion-based — people would just state the fact.
+
+Example 5 — GOOD poll (approach comparison with real opinions):
+Topic: Debate about whether to self-host LLMs or use APIs. Cost, control, latency, and privacy are all being discussed.
+Output: {"should_create_poll": true, "confidence_score": 0.82, "question": "Self-host your LLMs or just use APIs?", "options": ["Self-host for control", "APIs all the way", "Hybrid approach", "Depends on the use case"], "allows_multiple_answers": false}
+
+Example 6 — BAD poll (casual chatter, no substance):
+Topic: People chatting about the weather, weekend plans, and food recommendations.
+Output: {"should_create_poll": false, "confidence_score": 0.05, "question": null, "options": null, "allows_multiple_answers": null}
+Reason: Casual social chatter with no substantive angle to build a poll from.
+
+Example 7 — BAD poll (product release, no debate):
+Topic: A new version of a framework was released with feature list and changelog. People are reading the release notes.
+Output: {"should_create_poll": false, "confidence_score": 0.15, "question": null, "options": null, "allows_multiple_answers": null}
+Reason: Product release is factual information. Unless there's a specific controversial feature being debated, this doesn't warrant a poll."""
 
 
 def _create_gemini_instructor():
@@ -683,21 +751,6 @@ async def process_enrichment(
     total_text = " ".join(
         msg.get("text", "") for msg in context_window if msg.get("text")
     )
-    total_words = len(total_text.split())
-    has_url = any(
-        extract_urls(msg.get("text", "")) for msg in context_window if msg.get("text")
-    )
-    if total_words < 20 and not has_url:
-        logger.info(
-            f"[Enrichment] Skipping: insufficient substance ({total_words} words, no URL). Threshold: 20 words."
-        )
-        db.record_processed_window(
-            [msg["message_id"] for msg in context_window],
-            content_hash,
-            False,
-            "insufficient_substance",
-        )
-        return
 
     loop = asyncio.get_running_loop()
 
@@ -796,7 +849,32 @@ async def process_enrichment(
         )
 
     else:
-        # Non-URL path: use classify_worthiness on conversation context
+        context_window_state = db.get_context_window_enrichment_state()
+        if not context_window_state["is_context_window_enabled"]:
+            logger.info(
+                "[Enrichment] No URL content and context window enrichment disabled. Skipping."
+            )
+            db.record_processed_window(
+                [msg["message_id"] for msg in context_window],
+                content_hash,
+                False,
+                "no_url_content_cw_disabled",
+            )
+            return
+
+        total_words = len(total_text.split())
+        if total_words < 20:
+            logger.info(
+                f"[Enrichment] Skipping: insufficient substance ({total_words} words). Threshold: 20 words."
+            )
+            db.record_processed_window(
+                [msg["message_id"] for msg in context_window],
+                content_hash,
+                False,
+                "insufficient_substance",
+            )
+            return
+
         classification = await loop.run_in_executor(
             None, classify_worthiness, context_text
         )
@@ -817,12 +895,6 @@ async def process_enrichment(
             should_reply,
             reason,
         )
-
-        if reason != "url_shared" and not db.get_context_window_enrichment_state()["is_context_window_enabled"]:
-            logger.info(
-                f"[Enrichment] Context window trigger disabled. Skipping non-URL reason='{reason}'."
-            )
-            return
 
         if not should_reply or confidence < 0.8:
             logger.info(
@@ -936,8 +1008,8 @@ async def process_enrichment(
                 poll_result.options,
                 poll_result.allows_multiple_answers or False,
             )
-            logger.info(f"[Enrichment] Poll created for topic: '{topic}'")
+            logger.info(f"[Enrichment] Poll created for topic: '{topic}' (score={poll_result.confidence_score})")
         else:
-            logger.info(f"[Enrichment] No poll created for topic: '{topic}'")
+            logger.info(f"[Enrichment] No poll created for topic: '{topic}' (score={getattr(poll_result, 'confidence_score', 'N/A')}, should_create_poll={getattr(poll_result, 'should_create_poll', 'N/A')})")
     except Exception as e:
         logger.error(f"[Enrichment] Poll evaluation/sending failed: {e}")
