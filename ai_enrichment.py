@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Optional
 import asyncio
+from urlextract import URLExtract
 
 import requests as http_requests
 import trafilatura
@@ -180,9 +181,17 @@ def compute_content_hash(messages: list) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
+_url_extractor = URLExtract()
+
+
+def _clean_url(url: str) -> str:
+    while url and url[-1] in ".,;:!?" and not re.search(r"\.\w{2,4}$", url):
+        url = url[:-1]
+    return url
+
+
 def extract_urls(text: str) -> list:
-    url_pattern = re.compile(r"https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[/\w\-.?&=+#%]*")
-    return url_pattern.findall(text)
+    return [_clean_url(u) for u in _url_extractor.find_urls(text)]
 
 
 def serialize_messages(messages: list) -> str:

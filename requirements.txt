@@ -23,6 +23,7 @@ pyrogram
 tgcrypto
 ddgs
 trafilatura
+urlextract
 firecrawl-py
 openai
 instructor>=1.7.0
