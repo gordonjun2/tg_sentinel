@@ -1,4 +1,4 @@
-python-telegram-bot==20.7
+python-telegram-bot>=22.7
 python-dotenv==1.0.0
 pytz
 google-api-python-client>=2.86.0
