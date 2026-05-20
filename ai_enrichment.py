@@ -127,6 +127,11 @@ MONOSPACE TABLES:
   `---------|--------|--------`
   `Speed    | Fast   | Slow  `
 
+FORMATTING:
+- Use **bold** for key terms, names, headers, or important phrases to aid scanning.
+- Use __italic__ for secondary emphasis, sub-terms, or parenthetical highlights.
+- Do NOT use backticks for emphasis — only use backticks inside monospace tables.
+
 STYLE RULES:
 - Max 1 emoji per bullet, only if it genuinely aids scanning. Skip emoji if none fits.
 - Each bullet: ONE concise point, not a run-on sentence.
@@ -449,6 +454,8 @@ def _escape_md_v2(text: str) -> str:
 _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 _BULLET_RE = re.compile(r"^[\s]*[•\-]\s*", re.MULTILINE)
 _SOURCE_HEADER_RE = re.compile(r"^Sources?:\s*(.*)$", re.MULTILINE)
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_ITALIC_RE = re.compile(r"__(.+?)__(?!\w)")
 
 
 def format_reply_for_telegram(raw_reply: str) -> str:
@@ -467,7 +474,28 @@ def format_reply_for_telegram(raw_reply: str) -> str:
         body = raw_reply.strip()
         sources_section = ""
 
+    bold_segments: list[str] = []
+    italic_segments: list[str] = []
+
+    def _save_bold(m: re.Match) -> str:
+        idx = len(bold_segments)
+        bold_segments.append(m.group(1))
+        return f"\x00B{idx}\x00"
+
+    def _save_italic(m: re.Match) -> str:
+        idx = len(italic_segments)
+        italic_segments.append(m.group(1))
+        return f"\x00I{idx}\x00"
+
+    body = _BOLD_RE.sub(_save_bold, body)
+    body = _ITALIC_RE.sub(_save_italic, body)
+
     body = _escape_md_v2(body)
+
+    for idx, text in enumerate(bold_segments):
+        body = body.replace(f"\x00B{idx}\x00", f"*{_escape_md_v2(text)}*")
+    for idx, text in enumerate(italic_segments):
+        body = body.replace(f"\x00I{idx}\x00", f"_{_escape_md_v2(text)}_")
 
     if sources_section:
         lines = sources_section.split("\n")
@@ -745,6 +773,10 @@ async def process_enrichment(
     context_window = active_buffer.get_context_window()
     if not context_window:
         return
+
+    ctx_window_state = db.get_context_window_enrichment_state()
+    if not ctx_window_state["is_context_window_enabled"] and len(context_window) > 1:
+        context_window = context_window[-1:]
 
     content_hash = compute_content_hash(context_window)
 
