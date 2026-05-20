@@ -1,0 +1,30 @@
+ai_enrichment.py
+  s_61df0d08bdb73f::t_274c74ac4793bb 777-780
+  s_267695e9aa82af::t_69efa0a25f2690 477-492,495-498
+  s_267695e9aa82af::t_3364455990179f 130-134
+  s_267695e9aa82af::t_82f0b6a72ac9aa 457-458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.10",
+  "base_commit_sha": "17c8c2d797b55a33e7e601dae74eed2aa66a9842",
+  "prompts": {},
+  "sessions": {
+    "s_267695e9aa82af": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1bf5326bfffeR723DQLfogKAuo",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    },
+    "s_61df0d08bdb73f": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_1bf55784fffegWYHes27KNFw1o",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
