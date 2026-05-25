@@ -1,0 +1,19 @@
+luma_reminder.sh
+  s_e31a331420b55a::t_a4cda9e8673475 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "37f94a8ec9c644015149d07de744aba853c42205",
+  "prompts": {},
+  "sessions": {
+    "s_e31a331420b55a": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_19fd5e7d2ffetV1Ra63mwDFqyd",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
