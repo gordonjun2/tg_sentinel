@@ -23,7 +23,7 @@ from config import (
     TELEGRAM_API_KEY,
     TELEGRAM_HASH,
 )
-from luma_scraper import SGT, get_event_start_dt
+from luma_scraper import SGT, get_event_details
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
@@ -50,15 +50,16 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 REMINDER_SYSTEM_PROMPT = """\
-You are a friendly community manager for a tech/AI community (SISC).
-Write a concise, warm Telegram reminder message for an upcoming event.
+You are the hype person for a tech/AI community (SISC).
+Write a fun, punchy Telegram reminder for an upcoming event.
 Rules:
-- Keep it under 120 words
-- Use 1-2 relevant emojis maximum
+- Keep it under 100 words
+- Use 2-3 relevant emojis
 - Include the event date/time in SGT (Singapore Time)
-- Include the Luma registration link
+- Do NOT include any URLs or links
 - Plain text only — no Markdown or formatting syntax
-- Friendly tone, not salesy
+- Energetic, witty, playful tone — make people WANT to show up
+- Mild humor is encouraged (puns, light jokes, hype energy)
 - Do NOT invent any event details beyond what is provided
 """
 
@@ -70,12 +71,13 @@ def extract_luma_url(text: str) -> Optional[str]:
     return m.group(0) if m else None
 
 
-def generate_reminder_message(event_dt: datetime, luma_url: str) -> Optional[str]:
+def generate_reminder_message(event_dt: datetime, event_name: str, event_desc: str) -> Optional[str]:
     friendly_time = event_dt.strftime("%A, %d %B %Y at %I:%M %p SGT")
     user_prompt = (
-        f"Event date/time: {friendly_time}\n"
-        f"Luma event link: {luma_url}\n\n"
-        f"Write a reminder message for this event."
+        f"Event title: {event_name}\n"
+        f"Event description: {event_desc}\n"
+        f"Event date/time: {friendly_time}\n\n"
+        f"Write a fun reminder message for this event."
     )
     try:
         response = gemini_client.models.generate_content(
@@ -106,28 +108,28 @@ def generate_reminder_message(event_dt: datetime, luma_url: str) -> Optional[str
 
 
 async def get_pinned_luma_event(client: Client) -> Optional[tuple]:
-    async for message in client.search_messages(
-        TARGET_GROUP_ID,
-        filter=enums.MessagesFilter.PINNED,
-    ):
-        content = (message.text or "") + " " + (message.caption or "")
-        luma_url = extract_luma_url(content)
-        if not luma_url:
-            continue
+    chat = await client.get_chat(TARGET_GROUP_ID)
+    message = chat.pinned_message
+    if not message:
+        logger.info("No pinned message found.")
+        return None
 
-        logger.info(f"Found luma URL in pinned message {message.id}: {luma_url}")
-        event_dt = await asyncio.get_event_loop().run_in_executor(
-            None, get_event_start_dt, luma_url
-        )
-        if event_dt is None:
-            logger.warning(f"Could not parse event date from {luma_url}")
-            return None
+    content = (message.text or "") + " " + (message.caption or "")
+    luma_url = extract_luma_url(content)
+    if not luma_url:
+        logger.info("No luma URL found in pinned message.")
+        return None
 
-        logger.info(f"Event start: {event_dt}")
-        return event_dt, luma_url
+    logger.info(f"Found luma URL in pinned message {message.id}: {luma_url}")
+    details = await asyncio.get_event_loop().run_in_executor(
+        None, get_event_details, luma_url
+    )
+    if details is None:
+        logger.warning(f"Could not parse event details from {luma_url}")
+        return None
 
-    logger.info("No luma URL found in any pinned message.")
-    return None
+    logger.info(f"Event: {details['name']}, start: {details['start_dt']}")
+    return details["start_dt"], details["name"], details["description"], luma_url, message.id
 
 
 async def main() -> None:
@@ -145,21 +147,25 @@ async def main() -> None:
             logger.info("Nothing to do.")
             return
 
-        event_dt, luma_url = result
+        event_dt, event_name, event_desc, luma_url, source_msg_id = result
         delta_days = (event_dt.date() - today).days
         logger.info(f"Event date: {event_dt.date()}, delta: {delta_days} day(s)")
 
-        if delta_days not in (1, 7):
+        if delta_days not in (1, 7, 24):
             logger.info(f"No reminder needed (delta={delta_days}, need 1 or 7).")
             return
 
         logger.info(f"Event is {delta_days} day(s) away. Generating reminder...")
-        reminder_text = generate_reminder_message(event_dt, luma_url)
+        reminder_text = generate_reminder_message(event_dt, event_name, event_desc)
         if not reminder_text:
             logger.error("Failed to generate reminder. Aborting.")
             return
 
-        await client.send_message(chat_id=TARGET_GROUP_ID, text=reminder_text)
+        await client.send_message(
+            chat_id=TARGET_GROUP_ID,
+            text=reminder_text,
+            reply_to_message_id=source_msg_id,
+        )
         logger.info("Reminder sent successfully.")
 
 

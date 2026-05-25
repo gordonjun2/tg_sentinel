@@ -51,6 +51,18 @@ def format_datetime(raw: str) -> str:
         return raw
 
 
+def _extract_description_text(node) -> str:
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return "".join(_extract_description_text(item) for item in node)
+    if isinstance(node, dict):
+        text = node.get("text", "")
+        children = node.get("content", [])
+        return text + _extract_description_text(children)
+    return ""
+
+
 def get_event_start_dt(url: str) -> Optional[datetime]:
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
@@ -64,6 +76,31 @@ def get_event_start_dt(url: str) -> Optional[datetime]:
         if not raw:
             return None
         return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(SGT)
+    except Exception:
+        return None
+
+
+def get_event_details(url: str) -> Optional[dict]:
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        tag = soup.find("script", id="__NEXT_DATA__")
+        if not tag or not tag.string:
+            return None
+        data = json.loads(tag.string)
+        event_data = data["props"]["pageProps"]["initialData"]["data"]
+        evt = event_data["event"]
+        raw_start = find_start_at(data)
+        if not raw_start:
+            return None
+        start_dt = datetime.fromisoformat(raw_start.replace("Z", "+00:00")).astimezone(SGT)
+        name = evt.get("name", "")
+        desc_mirror = event_data.get("description_mirror")
+        description = ""
+        if desc_mirror and isinstance(desc_mirror, dict):
+            description = _extract_description_text(desc_mirror.get("content", []))
+        return {"start_dt": start_dt, "name": name, "description": description}
     except Exception:
         return None
 
