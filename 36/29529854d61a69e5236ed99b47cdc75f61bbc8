@@ -1,0 +1,36 @@
+luma_reminder.sh
+  s_e31a331420b55a::t_a11332476fa994 1-8
+luma_reminder.py
+  s_ef42249c8ba87a::t_e156e55c27cf25 164-165,168
+  s_ef42249c8ba87a::t_941674b6c4bfb4 117-119,126,129
+  s_ef42249c8ba87a::t_997756f30e1e87 26
+  s_ef42249c8ba87a::t_beb3addf24bfb6 74,77-78
+  s_ef42249c8ba87a::t_fff7300e777752 124-125,127-128,131-132
+  s_ef42249c8ba87a::t_4889a6a4ae30f7 150,159
+luma_scraper.py
+  s_ef42249c8ba87a::t_d5f85c5ee6aecf 54-65,83-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "3629529854d61a69e5236ed99b47cdc75f61bbc8",
+  "prompts": {},
+  "sessions": {
+    "s_e31a331420b55a": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_19fd5e7d2ffetV1Ra63mwDFqyd",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    },
+    "s_ef42249c8ba87a": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_19fe744aaffelP8DiWjmvrzFL8",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
