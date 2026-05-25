@@ -151,7 +151,7 @@ async def main() -> None:
         delta_days = (event_dt.date() - today).days
         logger.info(f"Event date: {event_dt.date()}, delta: {delta_days} day(s)")
 
-        if delta_days not in (1, 7, 24):
+        if delta_days not in (1, 7):
             logger.info(f"No reminder needed (delta={delta_days}, need 1 or 7).")
             return
 
