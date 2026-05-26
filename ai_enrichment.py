@@ -1007,6 +1007,7 @@ async def process_enrichment(
             parse_mode="MarkdownV2",
             disable_notification=True,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
+            reply_to_message_id=context_window[-1]["message_id"],
         )
     except Exception as e:
         if (
@@ -1022,6 +1023,7 @@ async def process_enrichment(
                 text=reply_text,
                 disable_notification=True,
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
+                reply_to_message_id=context_window[-1]["message_id"],
             )
         else:
             raise
