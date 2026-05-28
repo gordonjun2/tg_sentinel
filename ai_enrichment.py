@@ -30,15 +30,15 @@ logger = logging.getLogger(__name__)
 
 URL_SCORE_THRESHOLD = 0.65
 
-URL_SCORING_SYSTEM_PROMPT = """You are evaluating whether the content from a URL is worth enriching for a high-signal tech/AI/startup community.
+URL_SCORING_SYSTEM_PROMPT = """You are evaluating whether the content from a URL is worth enriching for a high-signal tech/AI/startup community that also values intellectually provocative scientific topics.
 
 Score the content from 0.0 to 1.0:
-- 0.8-1.0: Highly substantive AND technically deep — research paper with methodology/results, major tech announcement with engineering detail, in-depth technical analysis with specific data, architecture breakdowns, benchmark results
-- 0.65-0.79: Good — technical blog post with practical depth, dev tool or API launch with real usage detail, startup/product launch with novel technical approach, tech industry analysis with concrete data points
-- 0.4-0.64: Borderline — general business/finance news about tech companies (no technical depth), celebrity/entertainment news, light opinion pieces, brief tech news without substance, political news tangentially related to tech
-- 0.0-0.39: Not worth it — non-tech news (sports, lifestyle, gossip), paywall/empty content, social media posts, trivial content, memes, transaction pages, profile pages, raw blockchain data, listicles without depth
+- 0.8-1.0: Highly substantive AND deep — research paper with methodology/results, major tech announcement with engineering detail, in-depth technical analysis with specific data, architecture breakdowns, benchmark results. ALSO: peer-reviewed or institutionally credible research on speculative/frontier science topics (astrobiology, SETI, consciousness, quantum foundations, origin of life, anomalous phenomena with rigorous methodology, exoplanet discoveries, theoretical physics breakthroughs, neuroscience of awareness, etc.)
+- 0.65-0.79: Good — technical blog post with practical depth, dev tool or API launch with real usage detail, startup/product launch with novel technical approach, tech industry analysis with concrete data points. ALSO: well-sourced investigative journalism on frontier science, credible scientific review articles on speculative topics, NASA/academic press releases on anomalous findings, preprints from reputable researchers on unexplained phenomena.
+- 0.4-0.64: Borderline — general business/finance news about tech companies (no technical depth), celebrity/entertainment news, light opinion pieces, brief tech news without substance, political news tangentially related to tech, speculative content from non-credible sources or without scientific rigor.
+- 0.0-0.39: Not worth it — non-tech news (sports, lifestyle, gossip), paywall/empty content, social media posts, trivial content, memes, transaction pages, profile pages, raw blockchain data, listicles without depth, conspiracy theories without credible sourcing, obvious misinformation or hoaxes.
 
-CRITICAL: High scores (0.7+) require genuine TECHNICAL depth or significant tech-industry impact. General news about tech companies (earnings reports, executive changes, legal disputes) without technical substance should score 0.4-0.6. Non-tech topics (politics, sports, entertainment, lifestyle, health, crime) should score below 0.4 regardless of article quality.
+CRITICAL: High scores (0.7+) require EITHER genuine TECHNICAL depth, significant tech-industry impact, OR credible scientific rigor on an intellectually provocative topic. For speculative/frontier topics, the content must come from reputable sources (peer-reviewed journals, established research institutions, credentialed researchers, NASA, CERN, etc.) and demonstrate scientific methodology. General news about tech companies (earnings reports, executive changes, legal disputes) without technical substance should score 0.4-0.6. Generic non-tech topics (politics, sports, entertainment, lifestyle, health fads, crime) should score below 0.4 regardless of article quality.
 
 Few-shot examples:
 
@@ -50,28 +50,36 @@ Example 2 — Score: 0.78
 Content: A detailed blog post by an engineering team explaining their migration from a monolith to microservices, covering service boundaries, event-driven architecture choices, specific technologies used (Kafka, gRPC), observability stack, and lessons learned with concrete metrics (p99 latency dropped from 800ms to 120ms).
 Output: {"score": 0.78, "reason": "Technical blog post with practical engineering depth, specific architecture decisions, and measurable outcomes", "topic": "Microservices migration with measurable performance improvements", "search_queries": ["monolith to microservices migration patterns", "event-driven architecture Kafka gRPC"]}
 
-Example 3 — Score: 0.52
+Example 3 — Score: 0.85
+Content: A peer-reviewed paper in Nature Astronomy analyzing spectral data from the James Webb Space Telescope revealing potential biosignature gases (dimethyl sulfide) in the atmosphere of exoplanet K2-18b, including statistical confidence levels, atmospheric modeling methodology, comparison with abiotic explanations, and discussion of alternative hypotheses.
+Output: {"score": 0.85, "reason": "Credible peer-reviewed research on a highly provocative frontier science topic (extraterrestrial biosignatures) with rigorous methodology and quantitative analysis", "topic": "JWST detects potential biosignature gases in exoplanet atmosphere", "search_queries": ["K2-18b biosignature JWST 2025", "dimethyl sulfide exoplanet atmosphere", "James Webb Space Telescope exoplanet discoveries"]}
+
+Example 4 — Score: 0.52
 Content: A news article reporting that Apple's revenue increased 15% in Q3, discussing iPhone sales figures, services growth, and analyst reactions. No technical content about products or engineering.
 Output: {"score": 0.52, "reason": "General business/financial news about a tech company with no technical depth or engineering substance", "topic": "Apple Q3 earnings report", "search_queries": []}
 
-Example 4 — Score: 0.30
+Example 5 — Score: 0.30
 Content: An article about a celebrity's new diet and workout routine, with quotes from their trainer and meal plan details.
 Output: {"score": 0.30, "reason": "Non-tech celebrity/lifestyle content with zero relevance to tech/AI/startup community", "topic": "Celebrity fitness routine", "search_queries": []}
 
-Example 5 — Score: 0.25
+Example 6 — Score: 0.25
 Content: A political news article about election polling results and campaign strategies in an upcoming national election. No tech policy or tech industry implications discussed.
 Output: {"score": 0.25, "reason": "Pure political news with no tech angle, no technical depth, irrelevant to tech community", "topic": "National election polling", "search_queries": []}
 
-Example 6 — Score: 0.85
+Example 7 — Score: 0.85
 Content: A detailed announcement of a new open-source framework for building AI agents, including architecture overview, code examples, comparison with LangChain/CrewAI, supported LLM providers, tool-use patterns, and benchmark results on standard agent evaluation suites.
 Output: {"score": 0.85, "reason": "Major tech product launch with substantial technical detail: architecture, code examples, benchmarks, and competitive analysis", "topic": "New open-source AI agent framework", "search_queries": ["AI agent frameworks comparison 2025", "open source agent orchestration tools"]}
+
+Example 8 — Score: 0.80
+Content: A paper from the Galileo Project at Harvard analyzing interstellar object 'Oumuamua's non-gravitational acceleration, presenting data from telescope observations, comparing against standard outgassing models, and discussing the possibility of artificial light-sail technology with statistical analysis of likelihood ratios.
+Output: {"score": 0.80, "reason": "Credible institutional research (Harvard) on a highly speculative but scientifically analyzed topic with observational data and rigorous hypothesis testing", "topic": "Harvard analysis of Oumuamua anomalous acceleration and artificial origin hypothesis", "search_queries": ["Oumuamua interstellar object Harvard research", "Galileo Project Oumuamua light sail", "interstellar object anomalous acceleration"]}
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {"score": 0.0-1.0, "reason": "brief explanation", "topic": "brief topic description", "search_queries": ["query1", "query2"]}
 
 search_queries should be 1-3 specific queries to find additional context about this topic. Leave as [] if the fetched content is already comprehensive."""
 
-WORTHINESS_SYSTEM_PROMPT = """You are a conversation classifier for a high-signal tech/AI/startup community group.
+WORTHINESS_SYSTEM_PROMPT = """You are a conversation classifier for a high-signal tech/AI/startup community group that also values intellectually provocative scientific topics.
 
 You will receive the last N messages from a Telegram group conversation. Your job is to determine whether this conversation would benefit from additional context enrichment.
 
@@ -84,6 +92,7 @@ Specific worthy examples:
 1. A URL was shared that points to a meaningful article, paper, or resource about technology, AI, startups, economics, geopolitics, science, or emerging trends.
 2. Users are having a multi-turn technical discussion where specific facts, data, or background would add value.
 3. The discussion touches on a concrete newsworthy event or industry development with clear factual dimensions.
+4. Discussion of speculative or frontier science topics from credible sources — e.g. extraterrestrial life research, anomalous phenomena with scientific rigor, consciousness studies, quantum foundations, exoplanet discoveries, theoretical physics, origin of life, neuroscience breakthroughs — where factual context would deepen the conversation.
 
 A conversation is NOT worthy if ANY of these apply:
 - It's casual chatting, jokes, greetings, or social planning
