@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import re
+import subprocess
 from typing import Optional
 import asyncio
 from urlextract import URLExtract
@@ -221,11 +222,71 @@ def serialize_messages(messages: list) -> str:
     return "\n".join(lines)
 
 
+def _fetch_with_curl(url: str) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            [
+                "curl", "-s", "-L",
+                "--max-time", "15",
+                "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+                "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "-H", "Accept-Language: en-US,en;q=0.9",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if not result.stdout:
+            return None
+
+        from bs4 import BeautifulSoup as _BS
+
+        soup = _BS(result.stdout, "html.parser")
+
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+
+        content_selectors = [
+            "article",
+            "[role='main']",
+            "main",
+            "#main-content",
+            "#content",
+            "#page-content",
+            "#post",
+            "#article-page",
+            "#MktContent",
+            ".application-main",
+        ]
+        for sel in content_selectors:
+            el = soup.select_one(sel)
+            if el:
+                text = el.get_text(separator="\n", strip=True)
+                if len(text) > 500:
+                    return text[:8000]
+
+        body = soup.find("body")
+        if body:
+            for tag in body.find_all(["nav", "footer", "header", "aside", "form"]):
+                tag.decompose()
+            text = body.get_text(separator="\n", strip=True)
+            lines = [l for l in text.splitlines() if len(l.strip()) > 20]
+            text = "\n".join(lines)
+            if len(text) > 500:
+                return text[:8000]
+
+        return None
+    except Exception as e:
+        logger.debug(f"curl fallback failed for {url}: {e}")
+        return None
+
+
 def fetch_url_content(url: str) -> Optional[str]:
     try:
         downloaded = trafilatura.fetch_url(url)
         if not downloaded:
-            return None
+            return _fetch_with_curl(url)
         content = trafilatura.extract(
             downloaded,
             include_comments=False,
@@ -234,10 +295,10 @@ def fetch_url_content(url: str) -> Optional[str]:
         )
         if content and len(content) > 500:
             return content[:8000]
-        return None
+        return _fetch_with_curl(url)
     except Exception as e:
         logger.error(f"Failed to fetch URL content for {url}: {e}")
-        return None
+        return _fetch_with_curl(url)
 
 
 def search_web_firecrawl(query: str, max_results: int = 5) -> list:
