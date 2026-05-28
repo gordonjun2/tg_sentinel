@@ -41,6 +41,8 @@ Score the content from 0.0 to 1.0:
 
 CRITICAL: High scores (0.7+) require EITHER genuine TECHNICAL depth, significant tech-industry impact, OR credible scientific rigor on an intellectually provocative topic. For speculative/frontier topics, the content must come from reputable sources (peer-reviewed journals, established research institutions, credentialed researchers, NASA, CERN, etc.) and demonstrate scientific methodology. General news about tech companies (earnings reports, executive changes, legal disputes) without technical substance should score 0.4-0.6. Generic non-tech topics (politics, sports, entertainment, lifestyle, health fads, crime) should score below 0.4 regardless of article quality.
 
+Promotional or marketing pages whose primary purpose is to recruit, sell, or collect signups rather than to share substantive technical knowledge should score 0.3-0.5 regardless of topic relevance. This includes but is not limited to: program applications, course enrollments, event/conference registrations, job listings, fellowship/accelerator/incubator landing pages, residency program pages, and training bootcamp signups. Even if the topic is AI/tech-related, if the page is fundamentally a call-to-action to apply, register, enroll, or join, it lacks the technical substance this community values.
+
 Few-shot examples:
 
 Example 1 — Score: 0.92
@@ -74,6 +76,10 @@ Output: {"score": 0.85, "reason": "Major tech product launch with substantial te
 Example 8 — Score: 0.80
 Content: A paper from the Galileo Project at Harvard analyzing interstellar object 'Oumuamua's non-gravitational acceleration, presenting data from telescope observations, comparing against standard outgassing models, and discussing the possibility of artificial light-sail technology with statistical analysis of likelihood ratios.
 Output: {"score": 0.80, "reason": "Credible institutional research (Harvard) on a highly speculative but scientifically analyzed topic with observational data and rigorous hypothesis testing", "topic": "Harvard analysis of Oumuamua anomalous acceleration and artificial origin hypothesis", "search_queries": ["Oumuamua interstellar object Harvard research", "Galileo Project Oumuamua light sail", "interstellar object anomalous acceleration"]}
+
+Example 9 — Score: 0.35
+Content: A landing page for an AI residency program targeting builders and founders, describing cohort structure, application deadlines, eligibility requirements, benefits (mentorship, funding, workspace), and testimonials from past participants. No technical content, research findings, or engineering details — purely a recruitment/application page.
+Output: {"score": 0.35, "reason": "Promotional page for a program/application — recruitment content with no technical depth or substantive knowledge to enrich", "topic": "", "search_queries": []}
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {"score": 0.0-1.0, "reason": "brief explanation", "topic": "brief topic description", "search_queries": ["query1", "query2"]}
