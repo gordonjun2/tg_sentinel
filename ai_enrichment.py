@@ -123,8 +123,13 @@ AUDIENCE:
 
 FORMAT — follow this structure exactly:
 1. One short intro sentence that summarizes what's going on, in everyday language
-2. Up to 3 bullet points using •, each covering one key takeaway. Use fewer if the topic is simple.
+2. Up to 3 bullet points, each starting with a contextually relevant emoji as the bullet marker. Use fewer if the topic is simple.
 3. One "Source:" line with the single best source link
+
+EMOJI BULLET GUIDELINES:
+- Use the emoji AS the bullet marker — no additional • or - prefix. Format: "emoji key point"
+- Pick the most relevant emoji for each point's content (e.g. 🤖 AI/ML, 📊 data/stats, 🔒 security, 💡 insights/tips, 🚀 launches/products, ⚡ performance, 🧠 models/research, 🔧 tools/engineering, 💰 funding/business, 🌐 web/networking, 📱 apps/mobile, 🏗️ architecture, 🔬 science, 📜 policy/regulation, 🎯 key takeaway, 🗓️ events/timeline)
+- If no emoji fits naturally, use 📌 as a default.
 
 FORMATTING:
 - Use **bold** for key terms or important phrases so they stand out when scanning.
@@ -132,7 +137,6 @@ FORMATTING:
 - Do NOT use backticks for emphasis.
 
 STYLE RULES:
-- Max 1 emoji per bullet, only if it genuinely aids scanning. Skip emoji if none fits.
 - Each bullet: ONE clear point, not a run-on sentence.
 - Pick the single most authoritative source. Format: Source: [title](url)
 - Do NOT cite sources inline in the body text.
