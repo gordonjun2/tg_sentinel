@@ -1,12 +1,17 @@
 import hashlib
+import ipaddress
 import json
 import logging
 import re
 import subprocess
+import socket
+from io import BytesIO
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 import asyncio
 from urlextract import URLExtract
 
+import pypdf
 import requests as http_requests
 import trafilatura
 from ddgs import DDGS
@@ -30,6 +35,147 @@ from database import db
 logger = logging.getLogger(__name__)
 
 URL_SCORE_THRESHOLD = 0.65
+
+MAX_PDF_SIZE = 10 * 1024 * 1024
+MAX_PDF_PAGES = 100
+MAX_REDIRECTS = 3
+HTTP_TIMEOUT = (5, 30)
+URL_CONTENT_CHAR_CAP = 10000
+URL_FETCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; tg-sentinel-bot/1.0)",
+    "Accept": "*/*",
+}
+
+
+class UnsafeURLError(Exception):
+    pass
+
+
+def _assert_safe_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise UnsafeURLError(f"unsupported scheme: {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise UnsafeURLError("missing host")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        raise UnsafeURLError(f"dns resolution failed for {host!r}: {e}")
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr.split("%")[0])
+        except ValueError:
+            raise UnsafeURLError(f"unparseable address {addr!r}")
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise UnsafeURLError(f"host {host!r} resolves to non-public ip {ip}")
+
+
+def _safe_get(url: str, *, stream: bool):
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        _assert_safe_url(current)
+        resp = http_requests.get(
+            current,
+            allow_redirects=False,
+            timeout=HTTP_TIMEOUT,
+            headers=URL_FETCH_HEADERS,
+            stream=stream,
+        )
+        if resp.status_code in (301, 302, 303, 307, 308):
+            loc = resp.headers.get("Location")
+            resp.close()
+            if not loc:
+                raise UnsafeURLError("redirect without Location header")
+            current = urljoin(current, loc)
+            continue
+        return resp
+    raise UnsafeURLError(f"too many redirects (> {MAX_REDIRECTS})")
+
+
+def _looks_like_pdf_url(url: str) -> bool:
+    return urlparse(url).path.lower().endswith(".pdf")
+
+
+def _read_capped(resp, cap: int) -> Optional[bytes]:
+    cl = resp.headers.get("Content-Length")
+    if cl is not None:
+        try:
+            if int(cl) > cap:
+                resp.close()
+                return None
+        except ValueError:
+            pass
+    buf = bytearray()
+    try:
+        for chunk in resp.iter_content(65536):
+            if not chunk:
+                continue
+            buf.extend(chunk)
+            if len(buf) > cap:
+                return None
+    finally:
+        resp.close()
+    return bytes(buf)
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> Optional[str]:
+    if not pdf_bytes.startswith(b"%PDF-"):
+        logger.warning("[Enrichment] PDF magic bytes missing; refusing to parse")
+        return None
+    try:
+        reader = pypdf.PdfReader(BytesIO(pdf_bytes))
+    except Exception as e:
+        logger.error(f"[Enrichment] pypdf failed to open document: {e}")
+        return None
+    parts: list[str] = []
+    for page in reader.pages[:MAX_PDF_PAGES]:
+        try:
+            text = page.extract_text() or ""
+        except Exception as e:
+            logger.warning(f"[Enrichment] pypdf page extract failed: {e}")
+            continue
+        if text:
+            parts.append(text)
+    return "\n".join(parts) if parts else None
+
+
+def fetch_pdf_content(url: str) -> Optional[str]:
+    try:
+        resp = _safe_get(url, stream=True)
+    except UnsafeURLError as e:
+        logger.warning(f"[Enrichment] Refusing PDF fetch for {url}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"[Enrichment] PDF GET failed for {url}: {e}")
+        return None
+    try:
+        if resp.status_code != 200:
+            logger.info(
+                f"[Enrichment] PDF fetch status {resp.status_code} for {url}"
+            )
+            return None
+        pdf_bytes = _read_capped(resp, MAX_PDF_SIZE)
+    except Exception as e:
+        logger.error(f"[Enrichment] PDF read failed for {url}: {e}")
+        return None
+    if pdf_bytes is None:
+        logger.info(
+            f"[Enrichment] PDF exceeds {MAX_PDF_SIZE} bytes, refusing: {url}"
+        )
+        return None
+    text = _extract_pdf_text(pdf_bytes)
+    if not text or len(text) <= 500:
+        return None
+    return text[:URL_CONTENT_CHAR_CAP]
 
 URL_SCORING_SYSTEM_PROMPT = """You are evaluating whether the content from a URL is worth enriching for a high-signal tech/AI/startup community that also values intellectually provocative scientific topics.
 
@@ -290,6 +436,35 @@ def _fetch_with_curl(url: str) -> Optional[str]:
 
 def fetch_url_content(url: str) -> Optional[str]:
     try:
+        if _looks_like_pdf_url(url):
+            return fetch_pdf_content(url)
+
+        try:
+            resp = _safe_get(url, stream=True)
+        except UnsafeURLError as e:
+            logger.warning(f"[Enrichment] Refusing fetch for {url}: {e}")
+            return None
+
+        ctype = resp.headers.get("Content-Type", "").lower()
+        if ctype.startswith("application/pdf"):
+            if resp.status_code != 200:
+                resp.close()
+                logger.info(
+                    f"[Enrichment] PDF (sniffed) status {resp.status_code} for {url}"
+                )
+                return None
+            pdf_bytes = _read_capped(resp, MAX_PDF_SIZE)
+            if pdf_bytes is None:
+                logger.info(
+                    f"[Enrichment] PDF (sniffed) exceeds {MAX_PDF_SIZE} bytes: {url}"
+                )
+                return None
+            text = _extract_pdf_text(pdf_bytes)
+            if not text or len(text) <= 500:
+                return None
+            return text[:URL_CONTENT_CHAR_CAP]
+        resp.close()
+
         downloaded = trafilatura.fetch_url(url)
         if not downloaded:
             return _fetch_with_curl(url)
@@ -300,8 +475,8 @@ def fetch_url_content(url: str) -> Optional[str]:
             favor_precision=True,
         )
         if content and len(content) > 500:
-            return content[:8000]
-        return _fetch_with_curl(url)
+            return content[:URL_CONTENT_CHAR_CAP]
+        return None
     except Exception as e:
         logger.error(f"Failed to fetch URL content for {url}: {e}")
         return _fetch_with_curl(url)

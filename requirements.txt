@@ -28,3 +28,4 @@ firecrawl-py
 openai
 instructor>=1.7.0
 jsonref
+pypdf
