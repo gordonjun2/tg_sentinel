@@ -13,7 +13,7 @@ from typing import Optional
 from google import genai
 from google.genai import types
 from openai import OpenAI
-from pyrogram import Client, utils
+from pyrogram import Client, raw, utils
 
 from config import (
     BOT_TOKEN,
@@ -120,6 +120,38 @@ def _read_pinned_ids() -> list:
         return []
 
 
+def _write_pinned_ids(ids: list) -> None:
+    with open(PINNED_IDS_FILE, "w") as f:
+        json.dump(ids[:10], f)
+
+
+async def _cleanup_unpinned(client: Client, stored_ids: list) -> list:
+    if not stored_ids:
+        return []
+
+    peer = await client.resolve_peer(TARGET_GROUP_ID)
+    result = await client.invoke(
+        raw.functions.channels.GetMessages(
+            channel=peer,
+            id=[raw.types.InputMessageID(id=mid) for mid in stored_ids],
+        )
+    )
+
+    still_pinned = []
+    raw_msgs = {msg.id: msg for msg in getattr(result, "messages", [])}
+    for mid in stored_ids:
+        msg = raw_msgs.get(mid)
+        if msg and getattr(msg, "pinned", False):
+            still_pinned.append(mid)
+        else:
+            logger.info(f"Removing unpinned message {mid} from tracked list")
+
+    if still_pinned != stored_ids:
+        _write_pinned_ids(still_pinned)
+
+    return still_pinned
+
+
 async def _check_luma_in_message(message) -> Optional[tuple]:
     content = (message.text or "") + " " + (message.caption or "")
     luma_url = extract_luma_url(content)
@@ -149,7 +181,7 @@ async def get_pinned_luma_event(client: Client) -> Optional[tuple]:
         if result:
             return result
 
-    stored_ids = _read_pinned_ids()
+    stored_ids = await _cleanup_unpinned(client, _read_pinned_ids())
     for mid in stored_ids:
         if mid not in checked_ids:
             ids_to_check.append(mid)
