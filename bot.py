@@ -1,5 +1,6 @@
 import logging
 import csv
+import json
 import random
 from io import StringIO
 from telegram import (
@@ -148,6 +149,38 @@ async def handle_chat_member_update(
         return
 
     _pending_members.append(user)
+
+
+PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")
+
+
+def _read_pinned_ids() -> list:
+    try:
+        with open(PINNED_IDS_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _write_pinned_ids(ids: list) -> None:
+    with open(PINNED_IDS_FILE, "w") as f:
+        json.dump(ids[:10], f)
+
+
+async def handle_pinned_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat.id != TARGET_GROUP_ID:
+        return
+    if not update.message or not update.message.pinned_message:
+        return
+
+    pinned_id = update.message.pinned_message.message_id
+    ids = _read_pinned_ids()
+    if pinned_id in ids:
+        return
+
+    ids.insert(0, pinned_id)
+    _write_pinned_ids(ids)
+    logger.info(f"Tracked pinned message: {pinned_id}")
 
 
 async def _batch_announce_loop(bot) -> None:
@@ -1683,6 +1716,13 @@ def main() -> None:
             filters.Chat(chat_id=TARGET_GROUP_ID)
             & filters.StatusUpdate.NEW_CHAT_MEMBERS,
             announce_new_member,
+        )
+    )
+    application.add_handler(
+        MessageHandler(
+            filters.Chat(chat_id=TARGET_GROUP_ID)
+            & filters.StatusUpdate.PINNED_MESSAGE,
+            handle_pinned_message,
         )
     )
     application.add_handler(

@@ -2,7 +2,9 @@
 """Luma event reminder cron job. Run daily via crontab."""
 
 import asyncio
+import json
 import logging
+import os
 import re
 import sys
 from datetime import datetime
@@ -11,7 +13,7 @@ from typing import Optional
 from google import genai
 from google.genai import types
 from openai import OpenAI
-from pyrogram import Client, enums, utils
+from pyrogram import Client, utils
 
 from config import (
     BOT_TOKEN,
@@ -107,17 +109,21 @@ def generate_reminder_message(event_dt: datetime, event_name: str, event_desc: s
     return None
 
 
-async def get_pinned_luma_event(client: Client) -> Optional[tuple]:
-    chat = await client.get_chat(TARGET_GROUP_ID)
-    message = chat.pinned_message
-    if not message:
-        logger.info("No pinned message found.")
-        return None
+PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")
 
+
+def _read_pinned_ids() -> list:
+    try:
+        with open(PINNED_IDS_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+async def _check_luma_in_message(message) -> Optional[tuple]:
     content = (message.text or "") + " " + (message.caption or "")
     luma_url = extract_luma_url(content)
     if not luma_url:
-        logger.info("No luma URL found in pinned message.")
         return None
 
     logger.info(f"Found luma URL in pinned message {message.id}: {luma_url}")
@@ -130,6 +136,42 @@ async def get_pinned_luma_event(client: Client) -> Optional[tuple]:
 
     logger.info(f"Event: {details['name']}, start: {details['start_dt']}")
     return details["start_dt"], details["name"], details["description"], luma_url, message.id
+
+
+async def get_pinned_luma_event(client: Client) -> Optional[tuple]:
+    checked_ids = set()
+    ids_to_check = []
+
+    chat = await client.get_chat(TARGET_GROUP_ID)
+    if chat.pinned_message:
+        checked_ids.add(chat.pinned_message.id)
+        result = await _check_luma_in_message(chat.pinned_message)
+        if result:
+            return result
+
+    stored_ids = _read_pinned_ids()
+    for mid in stored_ids:
+        if mid not in checked_ids:
+            ids_to_check.append(mid)
+            checked_ids.add(mid)
+        if len(checked_ids) >= 10:
+            break
+
+    if not ids_to_check:
+        logger.info("No luma URL found in any pinned message.")
+        return None
+
+    messages = await client.get_messages(TARGET_GROUP_ID, ids_to_check)
+    if not isinstance(messages, list):
+        messages = [messages]
+
+    for message in messages:
+        result = await _check_luma_in_message(message)
+        if result:
+            return result
+
+    logger.info("No luma URL found in any pinned message.")
+    return None
 
 
 async def main() -> None:
