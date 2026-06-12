@@ -1,0 +1,28 @@
+bot.py
+  s_417ca9aa47cc29::t_5a8c4a6491f4f5 154-185
+  s_417ca9aa47cc29::t_067ceb5e6d4099 1722-1727
+  s_417ca9aa47cc29::t_bab1e714c09774 3
+luma_reminder.py
+  s_417ca9aa47cc29::t_105b0831b60fa4 5,7
+  s_417ca9aa47cc29::t_8eae77b14d5efe 112,114-122,143,152-156,159-166,168-169
+  s_417ca9aa47cc29::t_ad4ddbf3706fec 123,141-142,147-150,157-158,170-171
+  s_417ca9aa47cc29::t_58ab78e8aeba35 144-146,151
+  s_417ca9aa47cc29::t_98dd730be798f0 167,173-174
+  s_417ca9aa47cc29::t_7fad41ea457d2b 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "fcdd80580883cb8e81b7f1f006f44c6266e97f18",
+  "prompts": {},
+  "sessions": {
+    "s_417ca9aa47cc29": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_143d605f4ffewdnaJPM2uOLcna",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
