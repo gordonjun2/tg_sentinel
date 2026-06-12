@@ -235,9 +235,10 @@ async def main() -> None:
             logger.error("Failed to generate reminder. Aborting.")
             return
 
+        final_text = f"{reminder_text}\n\n{luma_url}"
         await client.send_message(
             chat_id=TARGET_GROUP_ID,
-            text=reminder_text,
+            text=final_text,
             reply_to_message_id=source_msg_id,
         )
         logger.info("Reminder sent successfully.")
