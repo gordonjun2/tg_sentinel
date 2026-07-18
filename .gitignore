@@ -221,3 +221,10 @@ transcriptions/
 
 # AI
 .trae
+
+# Gmail + Calendar integration
+gmail_cal_token.json
+gmail_cal_credentials.json
+gmail_calendar/data/
+gmail_calendar/*.session
+gmail_calendar/*.session-journal

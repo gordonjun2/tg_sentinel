@@ -138,3 +138,49 @@ WELCOME_MESSAGES = [
 
 # File size limits (in bytes)
 MAX_AUDIO_FILE_SIZE = 1024 * 1024 * 1024
+
+# ---------------------------------------------------------------------------
+# Gmail + Google Calendar integration (gmail_calendar package)
+# All vars have defaults so importing config.py without them still works.
+# ---------------------------------------------------------------------------
+GOOGLE_GMAIL_CAL_PROJECT_ID = os.getenv("GOOGLE_GMAIL_CAL_PROJECT_ID", "")
+GOOGLE_PUBSUB_TOPIC = os.getenv("GOOGLE_PUBSUB_TOPIC", "gmail-events")
+GOOGLE_PUBSUB_SUBSCRIPTION = os.getenv(
+    "GOOGLE_PUBSUB_SUBSCRIPTION", "gmail-events-pull"
+)
+
+# Path is resolved relative to the project root (the folder containing config.py)
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+GMAIL_CALENDAR_TOKEN_FILE = os.path.join(
+    _PROJECT_ROOT,
+    os.getenv("GMAIL_CALENDAR_TOKEN_FILE", "gmail_cal_token.json"),
+)
+GMAIL_CALENDAR_CREDENTIALS_FILE = os.path.join(
+    _PROJECT_ROOT,
+    os.getenv("GMAIL_CALENDAR_CREDENTIALS_FILE", "gmail_cal_credentials.json"),
+)
+GMAIL_CALENDAR_DB_PATH = os.path.join(
+    _PROJECT_ROOT,
+    os.getenv("GMAIL_CALENDAR_DB_PATH", "gmail_calendar/data/gmail_calendar.db"),
+)
+
+# Polling cadence
+GMAIL_POLL_INTERVAL_SECONDS = int(os.getenv("GMAIL_POLL_INTERVAL_SECONDS", "60"))
+CALENDAR_POLL_INTERVAL_SECONDS = int(
+    os.getenv("CALENDAR_POLL_INTERVAL_SECONDS", "60")
+)
+REMINDER_CHECK_INTERVAL_SECONDS = int(
+    os.getenv("REMINDER_CHECK_INTERVAL_SECONDS", "60")
+)
+
+# Importance scoring
+GMAIL_IMPORTANCE_THRESHOLD = float(os.getenv("GMAIL_IMPORTANCE_THRESHOLD", "0.5"))
+
+# Meeting reminders
+REMINDER_LEAD_MINUTES = int(os.getenv("REMINDER_LEAD_MINUTES", "30"))
+
+# Pyrogram session lives inside the package data dir
+GMAIL_CALENDAR_SESSION_NAME = os.getenv(
+    "GMAIL_CALENDAR_SESSION_NAME",
+    os.path.join(_PROJECT_ROOT, "gmail_calendar/data/gmail_calendar_bot"),
+)
