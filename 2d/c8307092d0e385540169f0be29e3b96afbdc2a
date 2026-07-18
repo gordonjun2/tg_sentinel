@@ -1,0 +1,73 @@
+.env.example
+  s_9ff2d6f11e1d2b::t_1a4774cbd3d984 15-21,25-32
+  s_9ff2d6f11e1d2b::t_f1acad5b4667c8 22-24
+docs/resume-setup.md
+  s_9ff2d6f11e1d2b::t_86b11dd2a1921b 1-147
+gmail_calendar/bot.py
+  s_9ff2d6f11e1d2b::t_5eb1b11310daae 1-162
+gmail_calendar/tests/test_calendar_sync.py
+  s_9ff2d6f11e1d2b::t_a45af29c3b46ad 1-92
+.gitignore
+  s_9ff2d6f11e1d2b::t_e4682bb380e096 227
+  s_9ff2d6f11e1d2b::t_6a35ac3de4adcb 223-226,228-230
+gmail_calendar/calendar_sync.py
+  s_9ff2d6f11e1d2b::t_95a6ff1129e1b6 1-210
+gmail_calendar/meeting_reminder.py
+  s_9ff2d6f11e1d2b::t_b9a88cfbe9bacc 1-96
+gmail_calendar/README.md
+  s_9ff2d6f11e1d2b::t_b1d8ddccb3b153 19,21-31,39,45,50-51,53,64
+  s_9ff2d6f11e1d2b::t_537a7f0ecd80ee 107
+  s_9ff2d6f11e1d2b::t_a8176e1280bbc4 1-18,20,32-38,40-44,46-49,52,54-63,65-106,108-116
+gmail_calendar/tests/test_reminder.py
+  s_9ff2d6f11e1d2b::t_f0bf108aedbc11 1-4,6-7,9-28,31-40,42-66,68-70,72,94-95
+  s_9ff2d6f11e1d2b::t_50df2f39181467 5,8,29-30,41,67,71,73-93,96-121
+requirements.txt
+  s_9ff2d6f11e1d2b::t_0464ec165a211a 32
+gmail_calendar/auth.py
+  s_9ff2d6f11e1d2b::t_90f6bd9920f94c 1-122
+gmail_calendar/__init__.py
+  s_9ff2d6f11e1d2b::t_90b2b2881731f6 1-11
+gmail_calendar/llm.py
+  s_9ff2d6f11e1d2b::t_75ccc717f138ce 1-158
+gmail_calendar/telegram_notifier.py
+  s_9ff2d6f11e1d2b::t_cb426e1eaacd2c 1-11,13-117
+  s_9ff2d6f11e1d2b::t_84ba607b1cd12d 12
+gmail_calendar/gmail_watcher.py
+  s_9ff2d6f11e1d2b::t_af6e8ace618921 1-50,58-424
+  s_9ff2d6f11e1d2b::t_47b77caa1dabb4 51-57
+gmail_calendar/gmail_calendar_bot.sh
+  s_9ff2d6f11e1d2b::t_d4a6068e936ef3 1-21
+gmail_calendar/tests/test_db.py
+  s_9ff2d6f11e1d2b::t_b04f187e8b1fdb 222-224,226-227
+  s_9ff2d6f11e1d2b::t_84910f49832c66 1-221,225,228-246
+gmail_calendar/db.py
+  s_9ff2d6f11e1d2b::t_9bea5e22fce1a8 1-395
+config.py
+  s_9ff2d6f11e1d2b::t_82e8ef85bac316 160
+  s_9ff2d6f11e1d2b::t_1cb4328f13aef3 141-159,161-186
+docs/gcp-setup.md
+  s_9ff2d6f11e1d2b::t_d0e0108c55524f 110-111
+  s_9ff2d6f11e1d2b::t_a81f6630a8875a 1-32,34,37,39,54-109,112-138,140-142,144-145
+  s_9ff2d6f11e1d2b::t_da98339f069a58 33,35-36,38,40-53
+  s_9ff2d6f11e1d2b::t_e631a52f5df3e9 139,143
+gmail_calendar/tests/test_gmail_watcher.py
+  s_9ff2d6f11e1d2b::t_f57873fe7f76f1 1-110,112-138,142-147,149,151-192
+  s_9ff2d6f11e1d2b::t_351493599d7c74 139-141,148,150
+  s_9ff2d6f11e1d2b::t_0d8da85cff162c 111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "2dc8307092d0e385540169f0be29e3b96afbdc2a",
+  "prompts": {},
+  "sessions": {
+    "s_9ff2d6f11e1d2b": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_08c537614ffeUDa3Y2mGhQ2aE0",
+        "model": "glm-5.1"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
