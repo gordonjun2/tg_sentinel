@@ -1,0 +1,30 @@
+partner_message_summarisation/backfill.py
+  s_59b5e308b5a1b8::t_6b4d32ac08a642 53-55
+  s_59b5e308b5a1b8::t_94ef64fa0d030e 1-28,30-52,56-75,77-148
+  s_59b5e308b5a1b8::t_0e3aa79bea424f 29,76
+partner_message_summarisation/tests/test_backfill.py
+  s_59b5e308b5a1b8::t_81ba1532b531e5 1-84
+partner_message_summarisation/README.md
+  s_59b5e308b5a1b8::t_12959c2fc7828c 74-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "83bbe06cd92ccd809297a4b46210ec260f45b7de",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_59b5e308b5a1b8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f45da72aeffebienIeFA7Efsfn",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
