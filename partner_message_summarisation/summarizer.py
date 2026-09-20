@@ -123,20 +123,25 @@ def _message_line(
     body = (row.get("message_text") or "").strip().replace("\n", " ")
     if len(body) > max_chars:
         body = body[: max_chars - 1] + "…"
-    parts = [f"[{fmt_sentinel(row['message_date'])}] {_sender_label(row)}:"]
-    if body:
-        parts.append(body)
+    speaker = _sender_label(row)
     annotations = []
-    reply_id = row.get("reply_to_message_id")
-    if reply_id and reply_id in reply_lookup:
-        annotations.append(f"(↪ replying to {reply_lookup[reply_id]})")
     if row.get("is_forward"):
         origin = (
             row.get("forward_from_name")
             or row.get("forward_from_chat_title")
-            or "unknown"
         )
-        annotations.append(f"(⤵ forwarded from {origin})")
+        if origin:
+            # attribute the content to the original author, note the forwarder
+            speaker = str(origin)
+            annotations.append(f"(⤵ forwarded by {_sender_label(row)})")
+        else:
+            annotations.append("(⤵ forwarded, original author hidden)")
+    parts = [f"[{fmt_sentinel(row['message_date'])}] {speaker}:"]
+    if body:
+        parts.append(body)
+    reply_id = row.get("reply_to_message_id")
+    if reply_id and reply_id in reply_lookup:
+        annotations.append(f"(↪ replying to {reply_lookup[reply_id]})")
     if row.get("media_type"):
         media = row["media_file_name"] or row["media_type"].lower()
         annotations.append(f"[{media}]")

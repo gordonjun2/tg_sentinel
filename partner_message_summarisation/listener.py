@@ -104,6 +104,12 @@ def _forward_fields(message: Any) -> dict:
             part for part in (fwd_user.first_name, fwd_user.last_name) if part
         ).strip()
         out["forward_from_name"] = name or fwd_user.username
+    else:
+        # original author hid their identity: Telegram only exposes a plain
+        # string name — store it so the digest can still attribute origin
+        hidden = getattr(message, "forward_sender_name", None)
+        if hidden:
+            out["forward_from_name"] = hidden
     fwd_chat = getattr(message, "forward_from_chat", None)
     if fwd_chat is not None:
         out["forward_from_chat_id"] = fwd_chat.id

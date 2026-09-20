@@ -109,6 +109,18 @@ def test_serialize_forward_fields() -> None:
     assert row["forward_from_chat_title"] == "News Source"
 
 
+def test_serialize_forward_hidden_author_name() -> None:
+    fwd_date = datetime(2026, 9, 17, 8, 0, tzinfo=timezone.utc)
+    msg = _message(
+        forward_date=fwd_date,
+        forward_from=None,
+        forward_sender_name="Hidden Author",
+    )
+    row = serialize_message(msg)
+    assert row["is_forward"] is True
+    assert row["forward_from_name"] == "Hidden Author"
+
+
 def test_serialize_reply_reference() -> None:
     row = serialize_message(_message(reply_to_message_id=99))
     assert row["reply_to_message_id"] == 99

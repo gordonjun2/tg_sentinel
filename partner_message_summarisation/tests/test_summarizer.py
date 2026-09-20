@@ -79,8 +79,16 @@ def test_transcript_reply_forward_media_annotations() -> None:
     ]
     block = build_chat_block("G", msgs)
     assert "(↪ replying to Alice (@alice))" in block
-    assert "(⤵ forwarded from News Source)" in block
+    assert "News Source:" in block  # original author becomes the speaker
+    assert "(⤵ forwarded by Alice (@alice))" in block
     assert "[report.pdf]" in block
+
+
+def test_transcript_forward_without_known_origin_keeps_sender() -> None:
+    msgs = [_msg(1, "look", is_forward=True)]
+    block = build_chat_block("G", msgs)
+    assert "Alice (@alice):" in block
+    assert "(⤵ forwarded, original author hidden)" in block
 
 
 # -- chunking --------------------------------------------------------------------
