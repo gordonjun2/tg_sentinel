@@ -83,7 +83,7 @@ python -m partner_message_summarisation.backfill --chat "AI Builders"  # one gro
 bash start_all.sh                                                   # resume
 ```
 
-Scraped messages are deduplicated (safe to re-run) and land as `pending`, so the next scheduled digest covers them; transcript caps chunk large backlogs across multiple LLM calls.
+Scraped messages are deduplicated (safe to re-run) and land as `completed` — history is presumed already seen, so it never feeds a digest; new live messages are archived as `pending` by the service as usual.
 
 ## Runbook
 

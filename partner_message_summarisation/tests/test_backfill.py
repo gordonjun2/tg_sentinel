@@ -49,6 +49,15 @@ def test_backfill_counts_and_dedup() -> None:
     assert db.bumped == [-100123]
 
 
+def test_backfill_inserts_as_completed() -> None:
+    db = _BackfillDB()
+    client = _HistoryClient([_message(id=1)])
+    _run(backfill_chat(client, db, _chat(), limit=10))
+    (row,) = db.inserted
+    assert row["status"] == "completed"
+    assert row["processed_at"] is not None
+
+
 def test_backfill_skips_service_messages() -> None:
     db = _BackfillDB()
     service_msg = SimpleNamespace(service=True, id=99, chat=_chat())

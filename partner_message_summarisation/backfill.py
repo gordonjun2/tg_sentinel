@@ -13,8 +13,9 @@ IMPORTANT — stop the service first (``kill <pid>``)::
     refuses to run while the service is up unless ``--force`` is passed.
 
 Inserted messages are deduplicated (re-running is safe) and land as
-``pending``, so the next scheduled digest covers them — transcript caps
-chunk large backlogs across multiple LLM calls.
+``completed`` — history is presumed already seen, so it never feeds the
+next digest. New live messages are still archived as ``pending`` by the
+service as usual.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import asyncio
 import logging
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 from .config import SENTINEL_MAX_CATCHUP_PER_CHAT
 from .db import PartnerMessageSummarisationDB
@@ -59,6 +61,8 @@ async def backfill_chat(
         if getattr(msg, "service", None):
             continue  # join/leave/pin notices — same filter as the live handler
         row = serialize_message(msg, chat_title=chat.title)
+        row["status"] = "completed"  # already-seen history: never re-digested
+        row["processed_at"] = datetime.now(timezone.utc)
         try:
             if await db.insert_message(row):
                 new += 1
@@ -100,7 +104,7 @@ async def run_backfill(limit: int, chat_filter: str | None) -> None:
                 chat.title, chat.id, new, dup,
             )
         logger.info(
-            "Backfill complete: %d new message(s) pending for the next digest "
+            "Backfill complete: %d new message(s) archived as completed "
             "(%d duplicates skipped)", total_new, total_dup,
         )
     finally:

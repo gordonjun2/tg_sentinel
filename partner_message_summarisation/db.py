@@ -202,7 +202,12 @@ class PartnerMessageSummarisationDB:
     # -------------------------------------------------------------- messages
 
     async def insert_message(self, row: dict[str, Any]) -> bool:
-        """Insert one message. Returns True when new, False on duplicate."""
+        """Insert one message. Returns True when new, False on duplicate.
+
+        Defaults to ``status = 'pending'``; callers may override via the row
+        (``backfill`` inserts history as ``completed``/already-seen).
+        """
+        status = row.get("status", "pending")
         rows = await self._execute(
             """
             INSERT INTO tg_messages (
@@ -211,19 +216,23 @@ class PartnerMessageSummarisationDB:
                 message_text, caption, message_date, reply_to_message_id,
                 is_forward, forward_from_name, forward_from_chat_id,
                 forward_from_chat_title, forward_date,
-                media_type, media_file_id, media_file_name
+                media_type, media_file_id, media_file_name,
+                status, processed_at
             ) VALUES (
                 %(chat_id)s, %(chat_title)s, %(message_id)s,
                 %(sender_user_id)s, %(sender_username)s, %(sender_display_name)s,
                 %(message_text)s, %(caption)s, %(message_date)s, %(reply_to_message_id)s,
                 %(is_forward)s, %(forward_from_name)s, %(forward_from_chat_id)s,
                 %(forward_from_chat_title)s, %(forward_date)s,
-                %(media_type)s, %(media_file_id)s, %(media_file_name)s
+                %(media_type)s, %(media_file_id)s, %(media_file_name)s,
+                %(status)s, %(processed_at)s
             )
             ON CONFLICT ON CONSTRAINT uq_tg_messages_chat_message DO NOTHING
             RETURNING id
             """,
             {
+                "status": status,
+                "processed_at": row.get("processed_at"),
                 "chat_id": row["chat_id"],
                 "chat_title": row.get("chat_title"),
                 "message_id": row["message_id"],
