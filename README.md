@@ -33,6 +33,14 @@ idempotent orchestrator.
    ```
    See `partner_message_summarisation/README.md` for its Postgres and
    deployment details.
+4. Verify the AI/search API keys are working (free metadata endpoints only —
+   model lists and credit usage; no generation calls, zero cost):
+   ```bash
+   venv/bin/python check_api_keys.py
+   ```
+   Checks `GEMINI_API_KEY`, `OPENAI_API_KEY` (validity + configured
+   enrichment model availability) and `FIRECRAWL_API_KEY` (validity +
+   remaining credits). Exits non-zero if any key fails.
 
 ## Running
 
@@ -80,6 +88,7 @@ gmail_calendar/             Gmail + Calendar service (on hold)
 luma_reminder.py            Luma event reminder (cron)
 luma_scraper.py             Luma event date scraper (utility)
 start_all.sh                Idempotent orchestrator for long-running services
+check_api_keys.py           API key health check (free endpoints, zero cost)
 bot_script.sh               Main bot standalone launcher
 openspec/                   Capability specs + archived change history
 TELEGRAM_INTELLIGENCE_PIPELINE_PLAN.md   Design notes for the summarisation pipeline
