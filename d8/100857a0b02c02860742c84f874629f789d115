@@ -1,0 +1,28 @@
+README.md
+  s_068c95996640e3::t_911a4251121fac 36-43
+  s_068c95996640e3::t_304d0072b5e326 91
+check_api_keys.py
+  s_068c95996640e3::t_65c8f446ee2f17 1-77,81-116
+  s_068c95996640e3::t_bd3729019d91d0 78-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d8100857a0b02c02860742c84f874629f789d115",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_068c95996640e3": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f42c94bbeffe3ijx2vTikBJ7aW",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
