@@ -24,6 +24,8 @@ from config import (  # noqa: F401  (re-exported for partner_message_summarisati
     SENTINEL_SESSION_NAME,
     SENTINEL_SUMMARY_TIME,
     SENTINEL_TIMEZONE,
+    SENTINEL_VERTEX_LOCATION,
+    SENTINEL_VERTEX_PROJECT,
     TELEGRAM_API_KEY,
     TELEGRAM_HASH,
 )

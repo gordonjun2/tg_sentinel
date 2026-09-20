@@ -197,6 +197,11 @@ SENTINEL_TIMEZONE = os.getenv("SENTINEL_TIMEZONE", "Asia/Singapore")
 SENTINEL_SUMMARY_TIME = os.getenv("SENTINEL_SUMMARY_TIME", "19:00")  # HH:MM local tz
 SENTINEL_DIGEST_MODEL = os.getenv("SENTINEL_DIGEST_MODEL", "gemini-3.6-flash")
 SENTINEL_OPENAI_DIGEST_MODEL = os.getenv("SENTINEL_OPENAI_DIGEST_MODEL", "gpt-5-mini")
+# Vertex AI mode (billed to GCP credits). When SENTINEL_VERTEX_PROJECT is set,
+# Gemini calls go through Vertex AI in that project; otherwise the AI Studio
+# GEMINI_API_KEY is used. Auth: GOOGLE_APPLICATION_CREDENTIALS service account.
+SENTINEL_VERTEX_PROJECT = os.getenv("SENTINEL_VERTEX_PROJECT", "").strip()
+SENTINEL_VERTEX_LOCATION = os.getenv("SENTINEL_VERTEX_LOCATION", "global").strip()
 SENTINEL_SESSION_NAME = os.getenv(
     "SENTINEL_SESSION_NAME",
     os.path.join(_PROJECT_ROOT, "partner_message_summarisation/data/sentinel_listener"),

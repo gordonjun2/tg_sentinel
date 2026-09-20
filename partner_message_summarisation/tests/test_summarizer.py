@@ -314,3 +314,33 @@ def test_response_schema_has_no_gemini_unsupported_defaults() -> None:
     for model in (PartnerMessageSummary, GroupSummary, UnansweredPoint):
         schema = json.dumps(model.model_json_schema())
         assert '"default"' not in schema, f"{model.__name__} has a scalar default"
+
+
+def test_gemini_client_mode_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Vertex AI mode when SENTINEL_VERTEX_PROJECT is set, AI Studio otherwise."""
+    import partner_message_summarisation.config as cfg
+    import partner_message_summarisation.summarizer as sm
+
+    calls: list[dict] = []
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr("google.genai.Client", _FakeClient)
+
+    monkeypatch.setattr(cfg, "SENTINEL_VERTEX_PROJECT", "sisc-465108")
+    monkeypatch.setattr(cfg, "SENTINEL_VERTEX_LOCATION", "global")
+    monkeypatch.setattr(sm, "_gemini_client", None)
+    sm._get_gemini()
+    assert calls[-1] == {
+        "vertexai": True,
+        "project": "sisc-465108",
+        "location": "global",
+    }
+
+    monkeypatch.setattr(cfg, "SENTINEL_VERTEX_PROJECT", "")
+    monkeypatch.setattr(sm, "_gemini_client", None)
+    monkeypatch.setattr(sm, "GEMINI_API_KEY", "test-key")
+    sm._get_gemini()
+    assert calls[-1] == {"api_key": "test-key"}

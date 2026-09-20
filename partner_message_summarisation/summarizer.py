@@ -272,9 +272,22 @@ _openai_client = None
 
 def _get_gemini():
     global _gemini_client
-    if _gemini_client is None and GEMINI_API_KEY:
-        from google import genai
+    if _gemini_client is not None:
+        return _gemini_client
+    from google import genai
+    from .config import SENTINEL_VERTEX_LOCATION, SENTINEL_VERTEX_PROJECT
 
+    if SENTINEL_VERTEX_PROJECT:
+        # Vertex AI — billed to the GCP project (Developer Program credits)
+        # via its linked Cloud Billing account. Auth: Application Default
+        # Credentials (GOOGLE_APPLICATION_CREDENTIALS service account).
+        _gemini_client = genai.Client(
+            vertexai=True,
+            project=SENTINEL_VERTEX_PROJECT,
+            location=SENTINEL_VERTEX_LOCATION,
+        )
+    elif GEMINI_API_KEY:
+        # AI Studio consumer Gemini API (separate prepay wallet)
         _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     return _gemini_client
 
@@ -291,7 +304,9 @@ def _get_openai():
 def _call_gemini(system_prompt: str, schema: type, text: str):
     client = _get_gemini()
     if client is None:
-        raise RuntimeError("Gemini client unavailable (no GEMINI_API_KEY)")
+        raise RuntimeError(
+            "Gemini client unavailable (no SENTINEL_VERTEX_PROJECT or GEMINI_API_KEY)"
+        )
     from google.genai import types
 
     response = client.models.generate_content(
@@ -340,9 +355,8 @@ def _dual_provider_call(system_prompt: str, schema: type, text: str):
     """
     start = time.monotonic()
     errors: list[str] = []
-    # OpenAI first: the configured Gemini project currently has no prepay
-    # credits, so gemini-first would burn a failing call on every run.
-    for provider, call in (("openai", _call_openai), ("gemini", _call_gemini)):
+    # Gemini first (Vertex AI / AI Studio); OpenAI is the fallback provider.
+    for provider, call in (("gemini", _call_gemini), ("openai", _call_openai)):
         try:
             result = call(system_prompt, schema, text)
             latency = int((time.monotonic() - start) * 1000)
