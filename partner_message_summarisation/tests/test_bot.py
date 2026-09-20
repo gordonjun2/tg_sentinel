@@ -79,6 +79,43 @@ def _fake_unanswered_summarizer(points=None):
     return fake
 
 
+def _fake_summary_result(groups):
+    """Build a (PartnerMessageSummary, provider, latency) fake LLM result.
+
+    ``groups``: iterable of (group_name, summary, has_signal).
+    """
+    from partner_message_summarisation.summarizer import (
+        GroupSummary,
+        PartnerMessageSummary,
+    )
+
+    return (
+        PartnerMessageSummary(
+            groups=[
+                GroupSummary(group_name=name, summary=[text], has_signal=signal)
+                for name, text, signal in groups
+            ]
+        ),
+        "fake-provider",
+        5,
+    )
+
+
+def _two_chat_pending() -> list[dict]:
+    rows = _pending_rows()
+    rows.append(
+        {
+            "id": 13,
+            "chat_id": -100456,
+            "chat_title": "SISC <> B",
+            "message_id": 1,
+            "message_date": datetime(2026, 9, 18, 2, 0, tzinfo=timezone.utc),
+            "message_text": "Thank you!",
+        }
+    )
+    return rows
+
+
 def test_empty_day_silent_success_without_delivery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -108,9 +145,7 @@ def test_successful_run_commits_batch(
         return True
 
     async def fake_summary(chunks):
-        from partner_message_summarisation.summarizer import PartnerMessageSummary
-
-        return PartnerMessageSummary(), "fake-provider", 5
+        return _fake_summary_result([("SISC <> A", "Alice asked about timelines.", True)])
 
     monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
     monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
@@ -135,9 +170,7 @@ def test_delivery_failure_leaves_batch_pending(
         return False
 
     async def fake_summary(chunks):
-        from partner_message_summarisation.summarizer import PartnerMessageSummary
-
-        return PartnerMessageSummary(), "fake-provider", 5
+        return _fake_summary_result([("SISC <> A", "Alice asked about timelines.", True)])
 
     monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
     monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
@@ -173,3 +206,107 @@ def test_lock_not_acquired_skips_run(
     db = FakeDB(lock_acquired=False, pending=_pending_rows())
     _run(bot_mod.run_daily_summary(db, bot_client=None))
     assert db.started == [] and db.succeeded == [] and db.failed == []
+
+
+def test_all_low_signal_groups_skip_delivery_but_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delivered = []
+
+    async def fake_deliver(client, parts):
+        delivered.append(parts)
+        return True
+
+    async def fake_summary(chunks):
+        return _fake_summary_result(
+            [("SISC <> A", "Alice thanked the group.", False)]
+        )
+
+    monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
+    monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
+    monkeypatch.setattr(
+        bot_mod, "summarize_unanswered", _fake_unanswered_summarizer()
+    )
+    db = FakeDB(pending=_pending_rows())
+    _run(bot_mod.run_daily_summary(db, bot_client=None))
+
+    assert delivered == []  # nothing sent to the admin group
+    assert db.completed_ids == [11, 12]  # still processed as completed
+    assert len(db.succeeded) == 1
+    assert db.succeeded[0][1]["report_parts"] == 0
+
+
+def test_mixed_signal_run_reports_only_signal_groups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delivered = []
+
+    async def fake_deliver(client, parts):
+        delivered.append(parts)
+        return True
+
+    async def fake_summary(chunks):
+        return _fake_summary_result(
+            [
+                ("SISC <> A", "Alice proposed an event date.", True),
+                ("SISC <> B", "Bob said thank you.", False),
+            ]
+        )
+
+    from partner_message_summarisation.summarizer import UnansweredPoint
+
+    monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
+    monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
+    monkeypatch.setattr(
+        bot_mod,
+        "summarize_unanswered",
+        _fake_unanswered_summarizer(
+            [
+                UnansweredPoint(group_name="SISC <> A", point="Alice wants a date"),
+                UnansweredPoint(group_name="SISC <> B", point="Bob said thanks"),
+            ]
+        ),
+    )
+    db = FakeDB(pending=_two_chat_pending())
+    _run(bot_mod.run_daily_summary(db, bot_client=None))
+
+    assert len(delivered) == 1
+    report = "".join(delivered[0])
+    assert "Alice proposed an event date" in report  # signal summary present
+    assert "Alice wants a date" in report  # signal-group unanswered present
+    assert "Bob said thank you" not in report  # low-signal summary omitted
+    assert "Bob said thanks" not in report  # its unanswered point dropped too
+    assert sorted(db.completed_ids) == [11, 12, 13]  # noise still completed
+
+
+def test_unanswered_in_signal_group_still_delivers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A group with substance but no LLM summary text still reports via unanswered."""
+    delivered = []
+
+    async def fake_deliver(client, parts):
+        delivered.append(parts)
+        return True
+
+    async def fake_summary(chunks):
+        return _fake_summary_result([])  # LLM returned no groups at all
+
+    from partner_message_summarisation.summarizer import UnansweredPoint
+
+    monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
+    monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
+    monkeypatch.setattr(
+        bot_mod,
+        "summarize_unanswered",
+        _fake_unanswered_summarizer(
+            [UnansweredPoint(group_name="SISC <> A", point="Alice awaits a reply")]
+        ),
+    )
+    db = FakeDB(pending=_pending_rows())
+    _run(bot_mod.run_daily_summary(db, bot_client=None))
+
+    # groups empty → signal_names empty → unanswered filtered out → silent skip
+    assert delivered == []
+    assert db.completed_ids == [11, 12]
+    assert db.succeeded[0][1]["report_parts"] == 0

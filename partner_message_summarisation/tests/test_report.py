@@ -27,11 +27,11 @@ def _summary() -> PartnerMessageSummary:
         groups=[
             GroupSummary(
                 group_name="SISC <> AI Builders",
-                summary="Alice demoed the SISC-built vacuum; ships in October.",
+                summary=["Alice demoed the SISC-built vacuum; ships in October."],
             ),
             GroupSummary(
                 group_name="SISC <> Founders",
-                summary="Gordon Oh confirmed the retreat dates; 40 going.",
+                summary=["Gordon Oh confirmed the retreat dates; 40 going."],
             ),
         ],
     )
@@ -106,7 +106,7 @@ def test_render_report_coverage_last_and_sorted() -> None:
 
 def test_render_report_escapes_html_in_content() -> None:
     summary = PartnerMessageSummary(
-        groups=[GroupSummary(group_name="G", summary="asked <about> <b>tags</b>")]
+        groups=[GroupSummary(group_name="G", summary=["asked <about> <b>tags</b>"])]
     )
     report = render_report(summary, START, END, {"G": 1}, [])
     assert "&lt;about&gt; &lt;b&gt;tags&lt;/b&gt;" in report
@@ -131,7 +131,7 @@ def _big_report(min_len: int) -> str:
         groups=[
             GroupSummary(
                 group_name=f"SISC <> Group {i}",
-                summary="Word " * 30 + str(i),
+                summary=["Word " * 30 + str(i)],
             )
             for i in range(min_len)
         ],

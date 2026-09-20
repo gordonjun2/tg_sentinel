@@ -61,7 +61,10 @@ def render_report(
     ]
     if summary.groups:
         for group in summary.groups:
-            lines.extend(["", f"<b>{_esc(group.group_name)}</b>", _esc(group.summary)])
+            lines.append("")
+            lines.append(f"<b>{_esc(group.group_name)}</b>")
+            for point in group.summary:
+                lines.append(f"• {_esc(point)}")
     else:
         lines.append("—")
     lines.extend(["", "❓ <b>Awaiting admin reply</b>"])

@@ -118,7 +118,42 @@ async def _execute_run(
     )
     summary, provider, latency_ms = await generate_summary(chunks)
     summary = sanitize_summary(summary, set(chat_counts))
-    unanswered = await summarize_unanswered(find_unanswered_by_chat(ordered))
+
+    # Only actionable / informational content reaches the admin group: the
+    # LLM flags low-signal groups (pure thanks/greetings/chatter) — their
+    # messages are still processed as completed, just not reported.
+    signal_names = {
+        g.group_name.casefold() for g in summary.groups if g.has_signal
+    }
+    noise = [g.group_name for g in summary.groups if not g.has_signal]
+    if noise:
+        logger.info(
+            "Run %d: %d low-signal group(s) omitted from the report: %s",
+            run_id, len(noise), ", ".join(sorted(noise)),
+        )
+    summary.groups = [g for g in summary.groups if g.has_signal]
+    unanswered_all = await summarize_unanswered(find_unanswered_by_chat(ordered))
+    unanswered = [
+        p
+        for p in unanswered_all
+        if p.group_name.casefold() in signal_names
+    ]
+
+    if not summary.groups and not unanswered:
+        logger.info(
+            "Run %d: nothing actionable or informational — silent skip "
+            "(%d message(s) marked completed)", run_id, len(pending),
+        )
+        await db.mark_completed([row["id"] for row in pending], run_id)
+        await db.succeed_run(
+            run_id,
+            message_count=len(pending),
+            chat_count=len(chats),
+            llm_provider=provider,
+            llm_latency_ms=latency_ms,
+            report_parts=0,
+        )
+        return
 
     report = render_report(
         summary, window_start, window_end, chat_counts, unanswered

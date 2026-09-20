@@ -40,10 +40,16 @@ class GroupSummary(BaseModel):
         ...,
         description="Exact group name as it appears in the '=== GROUP: ... ===' header",
     )
-    summary: str = Field(
+    summary: list[str] = Field(
         ...,
-        description="What happened in this group's conversation: the substance, "
-        "naming who said/asked/proposed what",
+        description="Bullet points of what happened in this group's conversation — "
+        "each point ONE concrete item naming who said/asked/proposed what",
+    )
+    has_signal: bool = Field(
+        default=True,
+        description="False when the conversation carries nothing actionable or "
+        "informational (only thanks/greetings/acknowledgements/emoji). "
+        "True when there is substance worth informing the admins about.",
     )
 
 
@@ -76,13 +82,17 @@ groups whose names start with "SISC <>".
 Produce a PartnerMessageSummary with one GroupSummary entry per group found in the transcript:
 - group_name: copy the group name EXACTLY as it appears in its "=== GROUP: ... ==="
   header. Never invent or alter group names.
-- summary: a faithful account of what happened in that group's conversation —
+- summary: bullet points covering what happened in that group's conversation —
   the substance (decisions, questions, proposals, events, requests, notable news),
-  explicitly attributing statements to the people who made them (e.g. "Gordon Oh
-  said he is coordinating panelists", "Cordi asked about timelines"). Write 2-6
-  sentences in flowing prose; use the most active participants' names. Skip pure
-  chatter, greetings, memes and logistics noise. If a group's transcript is only
-  noise, summarize that honestly in one short sentence.
+  each point explicitly attributing statements to the people who made them
+  (e.g. "Gordon Oh asked Han to introduce panelists", "Cordi asked about
+  timelines"). Write 2-8 short bullet points, one concrete point each; use the
+  most active participants' names. Skip pure chatter, greetings, memes and
+  logistics noise. If a group's transcript is only noise, one bullet is enough.
+- has_signal: false when the group's conversation is ONLY pleasantries — thanks,
+  greetings, acknowledgements, emoji, memes — i.e. nothing actionable or
+  informational for the admins. Anything with substance (a question, request,
+  decision, event, update) means has_signal stays true. When in doubt, true.
 Write in clear English.
 """
 
@@ -222,7 +232,11 @@ def merge_summaries(summaries: list[PartnerMessageSummary]) -> PartnerMessageSum
                 groups.append(existing)
                 by_name[key] = existing
             else:
-                existing.summary = f"{existing.summary}\n{group.summary.strip()}"
+                existing.summary = existing.summary + [
+                    point
+                    for point in group.summary
+                    if point.strip() and point not in existing.summary
+                ]
     return PartnerMessageSummary(groups=groups)
 
 

@@ -130,29 +130,29 @@ def test_chunking_oversized_single_group_split_with_header(
 def test_merge_unions_groups_across_chunks_and_concats_same_group() -> None:
     d1 = PartnerMessageSummary(
         groups=[
-            GroupSummary(group_name="SISC <> A", summary="part one"),
-            GroupSummary(group_name="SISC <> B", summary="B happened"),
+            GroupSummary(group_name="SISC <> A", summary=["part one"]),
+            GroupSummary(group_name="SISC <> B", summary=["B happened"]),
         ],
     )
     d2 = PartnerMessageSummary(
         groups=[
-            GroupSummary(group_name="SISC <> A", summary="part two"),
-            GroupSummary(group_name="SISC <> C", summary="C happened"),
+            GroupSummary(group_name="SISC <> A", summary=["part two"]),
+            GroupSummary(group_name="SISC <> C", summary=["C happened"]),
         ],
     )
     merged = merge_summaries([d1, d2])
     names = [g.group_name for g in merged.groups]
     assert names == ["SISC <> A", "SISC <> B", "SISC <> C"]  # first-seen order
     a = merged.groups[0]
-    assert a.summary == "part one\npart two"  # chunk parts concatenated
+    assert a.summary == ["part one", "part two"]  # chunk parts concatenated
 
 
 def test_merge_single_summary_passthrough() -> None:
     d = PartnerMessageSummary(
-        groups=[GroupSummary(group_name="G", summary="s1\ns2")],
+        groups=[GroupSummary(group_name="G", summary=["s1", "s2"])],
     )
     merged = merge_summaries([d])
-    assert merged.groups[0].summary == "s1\ns2"
+    assert merged.groups[0].summary == ["s1", "s2"]
 
 
 # -- attribution sanitization ------------------------------------------------------
@@ -161,18 +161,18 @@ def test_merge_single_summary_passthrough() -> None:
 def test_sanitize_drops_untrusted_group_names() -> None:
     summary = PartnerMessageSummary(
         groups=[
-            GroupSummary(group_name="SISC <> A", summary="real"),
-            GroupSummary(group_name="Invented Group", summary="made up"),
+            GroupSummary(group_name="SISC <> A", summary=["real"]),
+            GroupSummary(group_name="Invented Group", summary=["made up"]),
         ],
     )
     clean = sanitize_summary(summary, {"SISC <> A", "SISC <> B"})
     assert [g.group_name for g in clean.groups] == ["SISC <> A"]
-    assert clean.groups[0].summary == "real"
+    assert clean.groups[0].summary == ["real"]
 
 
 def test_sanitize_normalizes_group_name_casing() -> None:
     summary = PartnerMessageSummary(
-        groups=[GroupSummary(group_name="sisc <> ai builders", summary="d")],
+        groups=[GroupSummary(group_name="sisc <> ai builders", summary=["d"])],
     )
     clean = sanitize_summary(summary, {"SISC <> AI Builders"})
     assert clean.groups[0].group_name == "SISC <> AI Builders"
@@ -196,7 +196,7 @@ def test_generate_summary_merges_chunk_results(
                 groups=[
                     GroupSummary(
                         group_name=marker,
-                        summary=f"what happened in {marker}",
+                        summary=[f"point in {marker}"],
                     )
                 ],
             ),
