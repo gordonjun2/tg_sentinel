@@ -232,4 +232,4 @@ gmail_calendar/*.session-journal
 # Telegram intelligence pipeline
 partner_message_summarisation/data/
 partner_message_summarisation/*.session
-partner_message_summarisation/*.session-journal
+partner_message_summarisation/*.session-journalvertex_sa.json
