@@ -72,6 +72,9 @@ bash start_all.sh    # starts everything; safe to re-run (skips running services
   pending messages are summarized into a digest and delivered to
   `ADMIN_GROUP_ID`; empty days are silent; failed deliveries retry next run
 - Inspect with `python -m partner_message_summarisation.status`
+- Trigger an out-of-schedule digest immediately with
+  `python -m partner_message_summarisation.run_now` (safe to run while the
+  service is up)
 
 ## Project Structure
 

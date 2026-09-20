@@ -11,6 +11,7 @@ Entry points:
 | `python -m partner_message_summarisation.login` | One-time interactive login (creates the user session) |
 | `python -m partner_message_summarisation.bot` | Long-running service (ingest + daily digest) |
 | `python -m partner_message_summarisation.status` | Backlog / last runs / monitored chats |
+| `python -m partner_message_summarisation.run_now` | Trigger a digest run immediately (safe alongside the running service) |
 
 ## Setup
 
@@ -91,8 +92,10 @@ Scraped messages are deduplicated (safe to re-run) and land as `completed` — h
   the VPS or locally + copy the file); restart the service.
 - **Changed `SISC_GROUP_REGEX`**: restart required — group discovery runs at
   startup only.
-- **Forced out-of-schedule run**: set `SENTINEL_SUMMARY_TIME` a couple of
-  minutes ahead and restart; revert afterwards.
+- **Forced out-of-schedule run**: `python -m partner_message_summarisation.run_now`
+  (safe while the service is up — the DB advisory lock prevents overlap).
+  Alternative: set `SENTINEL_SUMMARY_TIME` a couple of minutes ahead and
+  restart; revert afterwards.
 - **Test without sending**: `SENTINEL_DRY_RUN=true` logs the full report and
   treats the run as delivered (messages get completed — messages will not be
   re-sent on the next real run).

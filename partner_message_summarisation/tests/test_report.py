@@ -63,8 +63,9 @@ def test_render_report_header_title_and_window() -> None:
     report = render_report(_summary(), START, END, _counts())
     lines = report.split("\n")
     assert lines[0] == "📜 <b>SISC Partners Message Summary</b>"
-    assert lines[1] == "Window: 17 Sep 19:00 → 18 Sep 19:00 SGT"
-    assert lines[2] == "Groups: 2 · Messages: 154"
+    assert lines[1] == "━" * 22
+    assert lines[2] == "Window: 17 Sep 19:00 → 18 Sep 19:00 SGT"
+    assert lines[3] == "Groups: 2 · Messages: 154"
     # date must not appear in the title (window only)
     assert "Fri 18 Sep 2026" not in lines[0]
 
@@ -77,6 +78,28 @@ def test_render_report_summary_per_group_with_speakers() -> None:
     assert "<b>SISC &lt;&gt; Founders</b>" in report
     assert "Alice demoed" in report
     assert "Gordon Oh confirmed" in report
+
+
+def test_render_report_headers_bordered_and_tight() -> None:
+    report = render_report(_summary(), START, END, _counts(), _unanswered())
+    rule = "━" * 22
+    for header in (
+        "📜 <b>SISC Partners Message Summary</b>",
+        "💬 <b>Summary</b>",
+        "❓ <b>Awaiting admin reply</b>",
+        "🧾 <b>Coverage</b>",
+    ):
+        assert f"{header}\n{rule}" in report
+    # no blank line between a section header and its first content line
+    assert report.split(f"💬 <b>Summary</b>\n{rule}\n", 1)[1].startswith(
+        "<b>SISC &lt;&gt; AI Builders</b>"
+    )
+    assert report.split(f"❓ <b>Awaiting admin reply</b>\n{rule}\n", 1)[1].startswith(
+        "<b>SISC &lt;&gt; AI Builders</b>"
+    )
+    assert report.split(f"🧾 <b>Coverage</b>\n{rule}\n", 1)[1].startswith(
+        "SISC &lt;&gt; AI Builders — 96 msgs"
+    )
 
 
 def test_render_report_unanswered_section() -> None:

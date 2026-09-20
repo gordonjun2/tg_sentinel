@@ -21,6 +21,8 @@ _CONT_SUFFIX = " …(cont)"
 
 _PARTIAL_TAG_RE = re.compile(r"<[^<>]*$")
 
+_HEADER_RULE = "━" * 22
+
 
 def _esc(text: str) -> str:
     return html.escape(str(text), quote=False)
@@ -54,30 +56,35 @@ def render_report(
     total_msgs = sum(chat_counts.values())
     lines = [
         f"📜 <b>SISC Partners Message Summary</b>",
+        _HEADER_RULE,
         f"Window: {window_str}",
         f"Groups: {len(chat_counts)} · Messages: {total_msgs}",
         "",
         "💬 <b>Summary</b>",
+        _HEADER_RULE,
     ]
     if summary.groups:
-        for group in summary.groups:
-            lines.append("")
+        for idx, group in enumerate(summary.groups):
+            if idx:
+                lines.append("")
             lines.append(f"<b>{_esc(group.group_name)}</b>")
             for point in group.summary:
                 lines.append(f"• {_esc(point)}")
     else:
         lines.append("—")
-    lines.extend(["", "❓ <b>Awaiting admin reply</b>"])
+    lines.extend(["", "❓ <b>Awaiting admin reply</b>", _HEADER_RULE])
     if unanswered:
         by_chat: dict[str, list[UnansweredPoint]] = {}
         for item in unanswered:
             by_chat.setdefault(item.group_name, []).append(item)
-        for chat_title, items in by_chat.items():
-            lines.extend(["", f"<b>{_esc(chat_title)}</b>"])
+        for idx, (chat_title, items) in enumerate(by_chat.items()):
+            if idx:
+                lines.append("")
+            lines.append(f"<b>{_esc(chat_title)}</b>")
             lines.extend(f"• {_esc(item.point)}" for item in items)
     else:
         lines.append("None — every partner message has been addressed ✓")
-    lines.extend(["", "🧾 <b>Coverage</b>"])
+    lines.extend(["", "🧾 <b>Coverage</b>", _HEADER_RULE])
     coverage = " · ".join(
         f"{_esc(title)} — {count} msgs"
         for title, count in sorted(
