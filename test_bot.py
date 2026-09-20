@@ -22,8 +22,8 @@ async def test_bot():
             question=
             "Hi Super-Individuals!\nWhich topic would you like to explore in our next session? (multi-select)",
             options=[
-                "🫧 AI & OBE (Out-of-Body Experience)",
-                "🔐 AI & Cybersecurity", 
+                "🌍 AI & Universal Basic Income (UBI)",
+                "🎲 AI & Gambling", 
                 "💃 AI & Cultural Intelligence (CQ)",
                 "Others (please let us know)"
             ],

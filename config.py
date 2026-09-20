@@ -184,3 +184,30 @@ GMAIL_CALENDAR_SESSION_NAME = os.getenv(
     "GMAIL_CALENDAR_SESSION_NAME",
     os.path.join(_PROJECT_ROOT, "gmail_calendar/data/gmail_calendar_bot"),
 )
+
+# ---------------------------------------------------------------------------
+# Telegram intelligence pipeline (partner_message_summarisation package)
+# Everything except DATABASE_URL has a default so importing config.py without
+# them still works; DATABASE_URL is validated (fail-fast) by partner_message_summarisation/config.py
+# so only the partner_message_summarisation service requires it.
+# ---------------------------------------------------------------------------
+DATABASE_URL = os.getenv("DATABASE_URL")  # postgres://user:pass@host:5432/db
+SISC_GROUP_REGEX = os.getenv("SISC_GROUP_REGEX", r"^SISC <>")
+SENTINEL_TIMEZONE = os.getenv("SENTINEL_TIMEZONE", "Asia/Singapore")
+SENTINEL_SUMMARY_TIME = os.getenv("SENTINEL_SUMMARY_TIME", "19:00")  # HH:MM local tz
+SENTINEL_DIGEST_MODEL = os.getenv("SENTINEL_DIGEST_MODEL", "gemini-2.5-flash")
+SENTINEL_OPENAI_DIGEST_MODEL = os.getenv("SENTINEL_OPENAI_DIGEST_MODEL", "gpt-5-mini")
+SENTINEL_SESSION_NAME = os.getenv(
+    "SENTINEL_SESSION_NAME",
+    os.path.join(_PROJECT_ROOT, "partner_message_summarisation/data/sentinel_listener"),
+)
+SENTINEL_BOT_SESSION_NAME = os.getenv(
+    "SENTINEL_BOT_SESSION_NAME",
+    os.path.join(_PROJECT_ROOT, "partner_message_summarisation/data/sentinel_bot"),
+)
+SENTINEL_MAX_CATCHUP_PER_CHAT = int(os.getenv("SENTINEL_MAX_CATCHUP_PER_CHAT", "200"))
+SENTINEL_MAX_MSG_CHARS = int(os.getenv("SENTINEL_MAX_MSG_CHARS", "800"))
+SENTINEL_MAX_TRANSCRIPT_CHARS = int(
+    os.getenv("SENTINEL_MAX_TRANSCRIPT_CHARS", "120000")
+)
+SENTINEL_DRY_RUN = os.getenv("SENTINEL_DRY_RUN", "false").lower() == "true"

@@ -30,3 +30,4 @@ instructor>=1.7.0
 jsonref
 pypdf
 google-cloud-pubsub>=2.27.0
+psycopg[binary]>=3.2

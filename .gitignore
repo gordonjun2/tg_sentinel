@@ -228,3 +228,8 @@ gmail_cal_credentials.json
 gmail_calendar/data/
 gmail_calendar/*.session
 gmail_calendar/*.session-journal
+
+# Telegram intelligence pipeline
+partner_message_summarisation/data/
+partner_message_summarisation/*.session
+partner_message_summarisation/*.session-journal
