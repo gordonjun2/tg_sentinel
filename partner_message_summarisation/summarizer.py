@@ -42,8 +42,8 @@ class GroupSummary(BaseModel):
     )
     summary: list[str] = Field(
         ...,
-        description="Bullet points of what happened in this group's conversation — "
-        "each point ONE concrete item naming who said/asked/proposed what",
+        description="Consolidated bullet points — at most 5, one per TOPIC or "
+        "OUTCOME, each naming the people involved. Never one bullet per message.",
     )
     has_signal: bool = Field(
         ...,
@@ -83,13 +83,13 @@ groups whose names start with "SISC <>".
 Produce a PartnerMessageSummary with one GroupSummary entry per group found in the transcript:
 - group_name: copy the group name EXACTLY as it appears in its "=== GROUP: ... ==="
   header. Never invent or alter group names.
-- summary: bullet points covering what happened in that group's conversation —
-  the substance (decisions, questions, proposals, events, requests, notable news),
-  each point explicitly attributing statements to the people who made them
-  (e.g. "Gordon Oh asked Han to introduce panelists", "Cordi asked about
-  timelines"). Write 2-8 short bullet points, one concrete point each; use the
-  most active participants' names. Skip pure chatter, greetings, memes and
-  logistics noise. If a group's transcript is only noise, one bullet is enough.
+- summary: AT MOST 5 bullet points (fewer for quiet groups), each capturing one
+  TOPIC or OUTCOME — never one bullet per message. Consolidate related
+  back-and-forth between several people into a single point stating what was
+  discussed, decided or agreed, and by whom, e.g. "Gordon Oh and Han agreed Han
+  will intro Shyar Me and Kong for panel opportunities; intro call with Kong
+  scheduled". Name the people involved. Skip pure chatter, greetings, memes and
+  logistics noise entirely. If a group's transcript is only noise, one bullet.
 - has_signal: false when the group's conversation is ONLY pleasantries — thanks,
   greetings, acknowledgements, emoji, memes — i.e. nothing actionable or
   informational for the admins. Anything with substance (a question, request,
@@ -319,6 +319,8 @@ def _call_openai(system_prompt: str, response_model: type, text: str):
     import instructor
 
     patched = instructor.from_openai(client)
+    # NOTE: no `temperature` — gpt-5 series models only accept the provider
+    # default (1) and reject any other value with a 400.
     return patched.chat.completions.create(
         model=SENTINEL_OPENAI_DIGEST_MODEL,
         messages=[
@@ -326,7 +328,6 @@ def _call_openai(system_prompt: str, response_model: type, text: str):
             {"role": "user", "content": text},
         ],
         response_model=response_model,
-        temperature=0.2,
         max_retries=2,
     )
 
@@ -339,7 +340,9 @@ def _dual_provider_call(system_prompt: str, schema: type, text: str):
     """
     start = time.monotonic()
     errors: list[str] = []
-    for provider, call in (("gemini", _call_gemini), ("openai", _call_openai)):
+    # OpenAI first: the configured Gemini project currently has no prepay
+    # credits, so gemini-first would burn a failing call on every run.
+    for provider, call in (("openai", _call_openai), ("gemini", _call_gemini)):
         try:
             result = call(system_prompt, schema, text)
             latency = int((time.monotonic() - start) * 1000)

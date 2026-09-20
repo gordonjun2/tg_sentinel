@@ -195,7 +195,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # postgres://user:pass@host:5432/db
 SISC_GROUP_REGEX = os.getenv("SISC_GROUP_REGEX", r"^SISC <>")
 SENTINEL_TIMEZONE = os.getenv("SENTINEL_TIMEZONE", "Asia/Singapore")
 SENTINEL_SUMMARY_TIME = os.getenv("SENTINEL_SUMMARY_TIME", "19:00")  # HH:MM local tz
-SENTINEL_DIGEST_MODEL = os.getenv("SENTINEL_DIGEST_MODEL", "gemini-2.5-flash")
+SENTINEL_DIGEST_MODEL = os.getenv("SENTINEL_DIGEST_MODEL", "gemini-3.6-flash")
 SENTINEL_OPENAI_DIGEST_MODEL = os.getenv("SENTINEL_OPENAI_DIGEST_MODEL", "gpt-5-mini")
 SENTINEL_SESSION_NAME = os.getenv(
     "SENTINEL_SESSION_NAME",
