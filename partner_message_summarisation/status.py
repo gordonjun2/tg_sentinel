@@ -10,6 +10,7 @@ import sys
 from datetime import datetime, timezone
 
 from .db import PartnerMessageSummarisationDB
+from .timeutil import fmt_sentinel
 
 
 def _age(dt: datetime | None) -> str:
@@ -49,7 +50,8 @@ async def _print_status() -> None:
             completed = run["completed_at"] or run["started_at"]
             print(
                 f"  #{run['id']} {run['status']:<8} window "
-                f"{run['window_start']:%d %b %H:%M} → {run['window_end']:%d %b %H:%M}"
+                f"{fmt_sentinel(run['window_start'], '%d %b %H:%M')} → "
+                f"{fmt_sentinel(run['window_end'], '%d %b %H:%M')} SGT"
                 f" · msgs={run['message_count']} chats={run['chat_count']}"
                 f" · {run['llm_provider'] or '-'} {run['llm_latency_ms'] or '-'}ms"
                 f" · parts={run['report_parts'] or '-'}"

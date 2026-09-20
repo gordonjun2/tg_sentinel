@@ -1,6 +1,6 @@
-"""Manual digest trigger — run the summarisation right now.
+"""Manual summary trigger — run the summarisation right now.
 
-The scheduled digest fires once a day at SENTINEL_SUMMARY_TIME (19:00 SGT
+The scheduled summary fires once a day at SENTINEL_SUMMARY_TIME (19:00 SGT
 by default). Use this to trigger a run immediately, e.g. to test the
 pipeline live without waiting::
 

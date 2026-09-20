@@ -35,3 +35,11 @@ if not DATABASE_URL:
     )
 
 DATABASE_URL = str(DATABASE_URL)
+
+# Pipeline-specific: admin identities (Telegram user IDs) whose replies to
+# partner messages count as "answered" in the unanswered-messages section.
+SENTINEL_ADMINS: dict[int, str] = {
+    6838780049: "Yuna",
+    131837449: "Gordon",
+    788105004: "Elmer",
+}

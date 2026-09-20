@@ -1,4 +1,4 @@
-"""Tests for transcript building, chunking, merge dedupe, attribution."""
+"""Tests for transcript building, chunking, merge, attribution."""
 
 from __future__ import annotations
 
@@ -8,12 +8,16 @@ import pytest
 
 from partner_message_summarisation import summarizer
 from partner_message_summarisation.summarizer import (
-    DailyDigest,
-    Insight,
+    PartnerMessageSummary,
+    GroupSummary,
+    UnansweredSummary,
+    UnansweredPoint,
     build_chat_block,
+    build_unanswered_block,
     chunk_transcripts,
-    merge_digests,
-    sanitize_digest,
+    merge_summaries,
+    sanitize_summary,
+    summarize_unanswered,
 )
 
 def _msg(message_id: int, text: str, **over) -> dict:
@@ -115,106 +119,76 @@ def test_chunking_oversized_single_group_split_with_header(
 # -- merge -----------------------------------------------------------------------
 
 
-def test_merge_dedupes_similar_titles_and_unions_sources() -> None:
-    d1 = DailyDigest(
-        highlights=["h1", "h2"],
-        insights=[
-            Insight(
-                title="Project X launch",
-                detail="detail a",
-                source_groups=["SISC <> A"],
-                importance=0.9,
-            )
+def test_merge_unions_groups_across_chunks_and_concats_same_group() -> None:
+    d1 = PartnerMessageSummary(
+        groups=[
+            GroupSummary(group_name="SISC <> A", summary="part one"),
+            GroupSummary(group_name="SISC <> B", summary="B happened"),
         ],
     )
-    d2 = DailyDigest(
-        highlights=["h3"],
-        insights=[
-            Insight(
-                title="Project X  launch",  # near-identical after normalization
-                detail="detail b",
-                source_groups=["SISC <> B"],
-                importance=0.7,
-            ),
-            Insight(
-                title="Totally different",
-                detail="detail c",
-                source_groups=["SISC <> B"],
-                importance=0.5,
-            ),
+    d2 = PartnerMessageSummary(
+        groups=[
+            GroupSummary(group_name="SISC <> A", summary="part two"),
+            GroupSummary(group_name="SISC <> C", summary="C happened"),
         ],
     )
-    merged = merge_digests([d1, d2])
-    assert len(merged.insights) == 2  # near-identical pair merged
-    top = merged.insights[0]
-    assert top.title == "Project X launch"
-    assert top.importance == 0.9  # max kept
-    assert set(top.source_groups) == {"SISC <> A", "SISC <> B"}
-    # highlights collected across chunks, deduped, capped at 5
-    assert set(merged.highlights) == {"h1", "h2", "h3"}
-    assert len(merged.highlights) == 3
+    merged = merge_summaries([d1, d2])
+    names = [g.group_name for g in merged.groups]
+    assert names == ["SISC <> A", "SISC <> B", "SISC <> C"]  # first-seen order
+    a = merged.groups[0]
+    assert a.summary == "part one\npart two"  # chunk parts concatenated
 
 
-def test_merge_resorts_by_importance() -> None:
-    d = DailyDigest(
-        highlights=[],
-        insights=[
-            Insight(title="low", detail="d", source_groups=["G"], importance=0.2),
-            Insight(title="high", detail="d", source_groups=["G"], importance=0.95),
-        ],
+def test_merge_single_summary_passthrough() -> None:
+    d = PartnerMessageSummary(
+        groups=[GroupSummary(group_name="G", summary="s1\ns2")],
     )
-    merged = merge_digests([d])
-    assert [i.title for i in merged.insights] == ["high", "low"]
+    merged = merge_summaries([d])
+    assert merged.groups[0].summary == "s1\ns2"
 
 
 # -- attribution sanitization ------------------------------------------------------
 
 
 def test_sanitize_drops_untrusted_group_names() -> None:
-    digest = DailyDigest(
-        highlights=[],
-        insights=[
-            Insight(
-                title="good",
-                detail="d",
-                source_groups=["SISC <> A", "Invented Group"],
-                importance=0.8,
-            ),
-            Insight(
-                title="all invented",
-                detail="d",
-                source_groups=["Made Up"],
-                importance=0.9,
-            ),
+    summary = PartnerMessageSummary(
+        groups=[
+            GroupSummary(group_name="SISC <> A", summary="real"),
+            GroupSummary(group_name="Invented Group", summary="made up"),
         ],
     )
-    clean = sanitize_digest(digest, {"SISC <> A", "SISC <> B"})
-    assert len(clean.insights) == 1
-    assert clean.insights[0].source_groups == ["SISC <> A"]
+    clean = sanitize_summary(summary, {"SISC <> A", "SISC <> B"})
+    assert [g.group_name for g in clean.groups] == ["SISC <> A"]
+    assert clean.groups[0].summary == "real"
+
+
+def test_sanitize_normalizes_group_name_casing() -> None:
+    summary = PartnerMessageSummary(
+        groups=[GroupSummary(group_name="sisc <> ai builders", summary="d")],
+    )
+    clean = sanitize_summary(summary, {"SISC <> AI Builders"})
+    assert clean.groups[0].group_name == "SISC <> AI Builders"
 
 
 # -- fake-LLM injection seam --------------------------------------------------------
 
 
-def test_generate_digest_merges_chunk_results(
+def test_generate_summary_merges_chunk_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """generate_digest() calls the injected summarizer per chunk and merges."""
+    """generate_summary() calls the injected summarizer per chunk and merges."""
 
     def fake_summarize_chunk(transcript: str):
         if "SISC <> A" in transcript:
-            marker, title = "SISC <> A", "Robot vacuum launch"
+            marker = "SISC <> A"
         else:
-            marker, title = "SISC <> B", "Founders retreat dates"
+            marker = "SISC <> B"
         return (
-            DailyDigest(
-                highlights=[f"hl for {marker}"],
-                insights=[
-                    Insight(
-                        title=title,
-                        detail="d",
-                        source_groups=[marker],
-                        importance=0.5,
+            PartnerMessageSummary(
+                groups=[
+                    GroupSummary(
+                        group_name=marker,
+                        summary=f"what happened in {marker}",
                     )
                 ],
             ),
@@ -225,8 +199,8 @@ def test_generate_digest_merges_chunk_results(
     monkeypatch.setattr(summarizer, "_summarize_chunk", fake_summarize_chunk)
     import asyncio
 
-    digest, provider, latency = asyncio.run(
-        summarizer.generate_digest(
+    summary, provider, latency = asyncio.run(
+        summarizer.generate_summary(
             [
                 "=== GROUP: SISC <> A ===\n[09:14] Alice: hello",
                 "=== GROUP: SISC <> B ===\n[09:15] Bob: hi",
@@ -235,4 +209,83 @@ def test_generate_digest_merges_chunk_results(
     )
     assert provider == "fake-provider"
     assert latency == 24
-    assert len(digest.insights) == 2
+    assert len(summary.groups) == 2
+
+
+# -- unanswered summarization -----------------------------------------------------
+
+
+def _unanswered_item(title: str, sender: str, excerpt: str):
+    from partner_message_summarisation.unanswered import UnansweredMessage
+
+    return UnansweredMessage(
+        chat_title=title,
+        sender=sender,
+        message_date=datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
+        excerpt=excerpt,
+    )
+
+
+def test_build_unanswered_block_lists_chat_sender_text() -> None:
+    block = build_unanswered_block(
+        [
+            _unanswered_item("SISC <> A", "Alice (@alice)", "What's the format?"),
+            _unanswered_item("SISC <> B", "Bob", "Can I join?"),
+        ]
+    )
+    lines = block.split("\n")
+    assert lines[0] == "[SISC <> A] Alice (@alice): What's the format?"
+    assert lines[1] == "[SISC <> B] Bob: Can I join?"
+
+
+def test_summarize_unanswered_empty_short_circuits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    def boom(block):
+        raise AssertionError("LLM must not be called for empty input")
+
+    monkeypatch.setattr(summarizer, "_summarize_unanswered_block", boom)
+    assert asyncio.run(summarize_unanswered([])) == []
+
+
+def test_summarize_unanswered_calls_llm_and_filters_unknown_chats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[str] = []
+
+    def fake_llm(block: str):
+        captured.append(block)
+        return (
+            UnansweredSummary(
+                points=[
+                    UnansweredPoint(
+                        group_name="SISC <> A",
+                        point="Alice wants to clarify what the panel format is",
+                    ),
+                    UnansweredPoint(
+                        group_name="Invented Chat",
+                        point="Ghost asks something",
+                    ),
+                ]
+            ),
+            "fake-provider",
+            7,
+        )
+
+    monkeypatch.setattr(summarizer, "_summarize_unanswered_block", fake_llm)
+    import asyncio
+
+    points = asyncio.run(
+        summarize_unanswered(
+            [_unanswered_item("SISC <> A", "Alice (@alice)", "What's the format?")]
+        )
+    )
+    assert "[SISC <> A] Alice (@alice): What's the format?" in captured[0]
+    assert points == [
+        UnansweredPoint(
+            group_name="SISC <> A",
+            point="Alice wants to clarify what the panel format is",
+        )
+    ]  # unknown-chat point dropped

@@ -1,4 +1,4 @@
-"""Daily digest scheduling: next 19:00 (or configured HH:MM) in the
+"""Daily summary scheduling: next 19:00 (or configured HH:MM) in the
 configured timezone, then a sleep → run → recompute loop.
 
 Follows the in-process asyncio loop style of ``gmail_calendar/bot.py`` —
@@ -55,7 +55,7 @@ async def scheduler_loop(
         target = next_run_at(now_utc, tz=tz, hhmm=hhmm)
         wait_seconds = max(0.0, (target - now_utc).total_seconds())
         logger.info(
-            "Next digest run at %s (in %.0f min)",
+            "Next summary run at %s (in %.0f min)",
             target.isoformat(), wait_seconds / 60,
         )
         await asyncio.sleep(wait_seconds)

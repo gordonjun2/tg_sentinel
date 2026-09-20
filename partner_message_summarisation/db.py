@@ -7,7 +7,7 @@ EXISTS`` schema init) but over psycopg 3 async instead of SQLite.
 Tables:
   * ``tg_chats``      — monitored partner groups discovered by title regex
   * ``tg_messages``   — archived messages; UNIQUE (chat_id, message_id) dedup
-  * ``summary_runs``  — one row per digest run (audit + window bookkeeping)
+  * ``summary_runs``  — one row per summary run (audit + window bookkeeping)
 
 The DSN is never logged — only a redacted ``host/dbname`` form.
 """
@@ -23,6 +23,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .config import DATABASE_URL
+from .timeutil import ensure_utc
 
 logger = logging.getLogger(__name__)
 
@@ -205,9 +206,20 @@ class PartnerMessageSummarisationDB:
         """Insert one message. Returns True when new, False on duplicate.
 
         Defaults to ``status = 'pending'``; callers may override via the row
-        (``backfill`` inserts history as ``completed``/already-seen).
+        (``backfill`` inserts history as ``completed``/already-seen). Naive
+        datetimes (Pyrogram gives naive UTC) are normalized to UTC-aware
+        so ``TIMESTAMPTZ`` storage never depends on the DB session zone.
         """
         status = row.get("status", "pending")
+        row = {
+            **row,
+            "message_date": ensure_utc(row["message_date"]),
+            "forward_date": (
+                ensure_utc(row["forward_date"])
+                if row.get("forward_date") is not None
+                else None
+            ),
+        }
         rows = await self._execute(
             """
             INSERT INTO tg_messages (

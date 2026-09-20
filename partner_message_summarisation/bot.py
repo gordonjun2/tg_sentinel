@@ -1,4 +1,4 @@
-"""Long-running entry point: ingest listener + daily digest scheduler.
+"""Long-running entry point: ingest listener + daily summary scheduler.
 
 Wires the user-account listener (live handlers + bounded catch-up +
 insert-retry loop) and the daily scheduler (19:00 SGT by default) that
@@ -30,7 +30,13 @@ from .listener import (
 from .notifier import deliver_report, make_bot_client
 from .report import render_report, split_report
 from .scheduler import scheduler_loop
-from .summarizer import chunk_transcripts, generate_digest, sanitize_digest
+from .summarizer import (
+    chunk_transcripts,
+    generate_summary,
+    sanitize_summary,
+    summarize_unanswered,
+)
+from .unanswered import find_unanswered_by_chat
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -43,21 +49,21 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 async def run_daily_summary(db: PartnerMessageSummarisationDB, bot_client) -> None:
-    """One digest run — the idempotency core (§11).
+    """One summary run — the idempotency core (§11).
 
     Advisory lock → run row → fetch pending → transcripts → LLM →
     render/split/deliver → only then mark the batch completed. Any
     failure marks the run failed and leaves every message pending.
     """
     if not await db.try_advisory_lock():
-        logger.warning("Another digest run holds the advisory lock — skipping")
+        logger.warning("Another summary run holds the advisory lock — skipping")
         return
     try:
         window_start = await db.get_last_success_window_end() or _EPOCH
         window_end = datetime.now(timezone.utc)
         run_id = await db.start_run(window_start, window_end)
         logger.info(
-            "Digest run %d started (window %s → %s)",
+            "Summary run %d started (window %s → %s)",
             run_id,
             window_start.isoformat(),
             window_end.isoformat(),
@@ -65,7 +71,7 @@ async def run_daily_summary(db: PartnerMessageSummarisationDB, bot_client) -> No
         try:
             await _execute_run(db, bot_client, run_id, window_start, window_end)
         except Exception as exc:  # noqa: BLE001 — run must record failure
-            logger.exception("Digest run %d failed", run_id)
+            logger.exception("Summary run %d failed", run_id)
             try:
                 await db.fail_run(run_id, str(exc))
             except Exception:  # noqa: BLE001
@@ -110,13 +116,16 @@ async def _execute_run(
         "Run %d: %d message(s) across %d chat(s), %d transcript chunk(s)",
         run_id, len(pending), len(chats), len(chunks),
     )
-    digest, provider, latency_ms = await generate_digest(chunks)
-    digest = sanitize_digest(digest, set(chat_counts))
+    summary, provider, latency_ms = await generate_summary(chunks)
+    summary = sanitize_summary(summary, set(chat_counts))
+    unanswered = await summarize_unanswered(find_unanswered_by_chat(ordered))
 
-    report = render_report(digest, window_start, window_end, chat_counts)
+    report = render_report(
+        summary, window_start, window_end, chat_counts, unanswered
+    )
     parts = split_report(report)
     logger.info(
-        "Run %d: digest ready (%s, %d ms) — %d part(s)",
+        "Run %d: summary ready (%s, %d ms) — %d part(s)",
         run_id, provider, latency_ms, len(parts),
     )
     if SENTINEL_DRY_RUN:

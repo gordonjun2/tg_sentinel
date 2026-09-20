@@ -1,4 +1,4 @@
-"""LLM summarization: transcripts → structured DailyDigest.
+"""LLM summarization: transcripts → structured PartnerMessageSummary.
 
 Dual-provider pattern mirroring ``gmail_calendar/llm.py``: Gemini
 ``response_schema`` primary, ``instructor.from_openai(OpenAI)`` fallback,
@@ -6,7 +6,7 @@ lazy client singletons, ``temperature=0.2``. The sync SDK calls are
 offloaded to a thread so the shared asyncio loop (live ingest handlers)
 is never blocked.
 
-Pure-Python pieces (transcript building, chat-boundary chunking, digest
+Pure-Python pieces (transcript building, chat-boundary chunking, summary
 merge, attribution sanitization) are separate functions so they can be
 unit-tested with a fake LLM.
 """
@@ -16,10 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from difflib import SequenceMatcher
-from typing import Optional
 
-import pytz
 from pydantic import BaseModel, Field
 
 from .config import (
@@ -29,39 +26,46 @@ from .config import (
     SENTINEL_MAX_MSG_CHARS,
     SENTINEL_MAX_TRANSCRIPT_CHARS,
     SENTINEL_OPENAI_DIGEST_MODEL,
-    SENTINEL_TIMEZONE,
 )
+from .timeutil import fmt_sentinel
 
 logger = logging.getLogger(__name__)
-
-SIMILARITY_THRESHOLD = 0.8
 
 
 # --- structured output models (mirrors gmail_calendar/llm.py:28-46) ----------
 
 
-class Insight(BaseModel):
-    title: str = Field(..., description="Short headline of the insight")
-    detail: str = Field(
-        ..., description="2-4 sentence explanation with concrete specifics"
-    )
-    source_groups: list[str] = Field(
-        ..., description="Exact names of the SISC groups this came from"
-    )
-    importance: float = Field(
+class GroupSummary(BaseModel):
+    group_name: str = Field(
         ...,
-        ge=0.0,
-        le=1.0,
-        description="0.0-1.0; 1.0 = the whole club should act on this today",
+        description="Exact group name as it appears in the '=== GROUP: ... ===' header",
+    )
+    summary: str = Field(
+        ...,
+        description="What happened in this group's conversation: the substance, "
+        "naming who said/asked/proposed what",
     )
 
 
-class DailyDigest(BaseModel):
-    highlights: list[str] = Field(
+class PartnerMessageSummary(BaseModel):
+    groups: list[GroupSummary] = Field(
         default_factory=list,
-        description="0-5 one-line top takeaways",
+        description="One entry per group present in the transcript",
     )
-    insights: list[Insight] = Field(default_factory=list)
+
+
+class UnansweredPoint(BaseModel):
+    group_name: str = Field(
+        ..., description="Exact chat title as provided in the input"
+    )
+    point: str = Field(
+        ...,
+        description="One line naming the person and what they want, ask or flag",
+    )
+
+
+class UnansweredSummary(BaseModel):
+    points: list[UnansweredPoint] = Field(default_factory=list)
 
 
 SYSTEM_PROMPT = """\
@@ -69,22 +73,34 @@ You are the daily analyst for SISC (Super-Individual Secret Club), an invite-onl
 tech/AI community. You receive chronological transcripts from several Telegram
 groups whose names start with "SISC <>".
 
-Produce a DailyDigest:
-- insights: the genuinely important items (project launches, notable discussions,
-  decisions, opportunities, events, member wins). Skip chatter, greetings, memes,
-  logistics noise. Each insight MUST list the exact group name(s) it came from in
-  source_groups. Do not invent group names that are not in the transcript.
-- highlights: at most 5 punchy one-liners for someone who read nothing today.
-- importance 0.0-1.0 (1.0 = the whole club should act on this today).
-Be specific: name people/projects/links when they appear. Write in clear English.
+Produce a PartnerMessageSummary with one GroupSummary entry per group found in the transcript:
+- group_name: copy the group name EXACTLY as it appears in its "=== GROUP: ... ==="
+  header. Never invent or alter group names.
+- summary: a faithful account of what happened in that group's conversation —
+  the substance (decisions, questions, proposals, events, requests, notable news),
+  explicitly attributing statements to the people who made them (e.g. "Gordon Oh
+  said he is coordinating panelists", "Cordi asked about timelines"). Write 2-6
+  sentences in flowing prose; use the most active participants' names. Skip pure
+  chatter, greetings, memes and logistics noise. If a group's transcript is only
+  noise, summarize that honestly in one short sentence.
+Write in clear English.
+"""
+
+UNANSWERED_SYSTEM_PROMPT = """\
+You assist the admins of SISC (Super-Individual Secret Club). You receive a
+list of partner messages that no admin has replied to yet. Rewrite the list
+as short third-person bullets for the admin team:
+- point: ONE line naming the person and what they want, ask, propose or flag,
+  e.g. "Shyar Me wants to clarify what the panel format is" or "Cordi is
+  still deciding whether she can join the panel". Combine several messages
+  from the same person in the same group into a single bullet.
+- group_name: copy the chat title EXACTLY as provided in [brackets].
+Do not invent people, requests or details. Keep the same information the
+messages convey; write in clear English.
 """
 
 
 # --- transcript construction (§9.2) -------------------------------------------
-
-
-def _fmt_time(dt, tz: pytz.BaseTzInfo) -> str:
-    return dt.astimezone(tz).strftime("%H:%M")
 
 
 def _sender_label(row: dict) -> str:
@@ -101,14 +117,13 @@ def _sender_label(row: dict) -> str:
 
 def _message_line(
     row: dict,
-    tz: pytz.BaseTzInfo,
     max_chars: int,
     reply_lookup: dict[int, str],
 ) -> str:
     body = (row.get("message_text") or "").strip().replace("\n", " ")
     if len(body) > max_chars:
         body = body[: max_chars - 1] + "…"
-    parts = [f"[{_fmt_time(row['message_date'], tz)}] {_sender_label(row)}:"]
+    parts = [f"[{fmt_sentinel(row['message_date'])}] {_sender_label(row)}:"]
     if body:
         parts.append(body)
     annotations = []
@@ -132,10 +147,9 @@ def _message_line(
 
 def build_chat_block(chat_title: str, messages: list[dict]) -> str:
     """Transcript block for one chat: header + chronological lines."""
-    tz = pytz.timezone(SENTINEL_TIMEZONE)
     ordered = sorted(messages, key=lambda m: (m["message_date"], m["message_id"]))
     by_id = {m["message_id"]: _sender_label(m) for m in ordered}
-    lines = [_message_line(m, tz, SENTINEL_MAX_MSG_CHARS, by_id) for m in ordered]
+    lines = [_message_line(m, SENTINEL_MAX_MSG_CHARS, by_id) for m in ordered]
     return f"=== GROUP: {chat_title} ===\n" + "\n".join(lines)
 
 
@@ -189,71 +203,45 @@ def chunk_transcripts(messages_by_chat: list[tuple[str, list[dict]]]) -> list[st
 # --- merge + attribution (§9.2) -------------------------------------------------
 
 
-def _titles_similar(a: str, b: str) -> bool:
-    return (
-        SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
-        >= SIMILARITY_THRESHOLD
-    )
+def merge_summaries(summaries: list[PartnerMessageSummary]) -> PartnerMessageSummary:
+    """Merge per-chunk summaries: one entry per group (a group split across
+    chunks gets its summaries concatenated in chunk order)."""
+    groups: list[GroupSummary] = []
+    by_name: dict[str, GroupSummary] = {}
+    for summary in summaries:
+        for group in summary.groups:
+            key = group.group_name.strip().casefold()
+            existing = by_name.get(key)
+            if existing is None:
+                existing = group.model_copy()
+                groups.append(existing)
+                by_name[key] = existing
+            else:
+                existing.summary = f"{existing.summary}\n{group.summary.strip()}"
+    return PartnerMessageSummary(groups=groups)
 
 
-def merge_digests(digests: list[DailyDigest]) -> DailyDigest:
-    """Merge per-chunk digests: concat, dedupe near-identical insights,
-    re-sort by importance, cap highlights at 5 (spread across chunks)."""
-    highlights: list[str] = []
-    for i in range(5):
-        for digest in digests:
-            if i < len(digest.highlights) and len(highlights) < 5:
-                if digest.highlights[i] not in highlights:
-                    highlights.append(digest.highlights[i])
+def sanitize_summary(
+    summary: PartnerMessageSummary, allowed_groups: set[str]
+) -> PartnerMessageSummary:
+    """Restrict group attribution to groups present in the transcript.
 
-    insights: list[Insight] = []
-    for digest in digests:
-        for insight in digest.insights:
-            merged = False
-            for existing in insights:
-                if _titles_similar(existing.title, insight.title):
-                    existing.source_groups = sorted(
-                        set(existing.source_groups) | set(insight.source_groups)
-                    )
-                    existing.importance = max(existing.importance, insight.importance)
-                    merged = True
-                    break
-            if not merged:
-                insights.append(insight.model_copy())
-    insights.sort(key=lambda i: i.importance, reverse=True)
-    return DailyDigest(highlights=highlights, insights=insights)
-
-
-def sanitize_digest(
-    digest: DailyDigest, allowed_groups: set[str]
-) -> DailyDigest:
-    """Restrict insight attribution to groups present in the transcript.
-
-    Group names not in ``allowed_groups`` are dropped from ``source_groups``
-    (case-insensitive match); insights left with no valid source are removed.
+    Group names not in ``allowed_groups`` are dropped (case-insensitive
+    match); the remaining entries keep transcript order.
     """
     allowed_lower = {g.casefold(): g for g in allowed_groups}
-    kept: list[Insight] = []
-    for insight in digest.insights:
-        valid = sorted(
-            {
-                allowed_lower[g.casefold()]
-                for g in insight.source_groups
-                if g.casefold() in allowed_lower
-            }
-        )
-        if not valid:
+    kept: list[GroupSummary] = []
+    for group in summary.groups:
+        canonical = allowed_lower.get(group.group_name.strip().casefold())
+        if canonical is None:
             logger.warning(
-                "Dropped insight %r — no valid source group in %s",
-                insight.title, insight.source_groups,
+                "Dropped group summary %r — not among transcript groups %s",
+                group.group_name, sorted(allowed_groups),
             )
             continue
-        insight.source_groups = valid
-        kept.append(insight)
-    return DailyDigest(
-        highlights=digest.highlights,
-        insights=kept,
-    )
+        group.group_name = canonical
+        kept.append(group)
+    return PartnerMessageSummary(groups=kept)
 
 
 # --- provider calls (dual pattern, §9.4) ----------------------------------------
@@ -280,7 +268,7 @@ def _get_openai():
     return _openai_client
 
 
-def _call_gemini(transcript: str) -> DailyDigest:
+def _call_gemini(system_prompt: str, schema: type, text: str):
     client = _get_gemini()
     if client is None:
         raise RuntimeError("Gemini client unavailable (no GEMINI_API_KEY)")
@@ -289,22 +277,22 @@ def _call_gemini(transcript: str) -> DailyDigest:
     response = client.models.generate_content(
         model=SENTINEL_DIGEST_MODEL,
         config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
+            system_instruction=system_prompt,
             response_mime_type="application/json",
-            response_schema=DailyDigest,
+            response_schema=schema,
             temperature=0.2,
         ),
-        contents=transcript,
+        contents=text,
     )
     data = response.parsed
-    if isinstance(data, DailyDigest):
+    if isinstance(data, schema):
         return data
     if isinstance(data, dict):
-        return DailyDigest.model_validate(data)
-    return DailyDigest.model_validate_json(response.text)
+        return schema.model_validate(data)
+    return schema.model_validate_json(response.text)
 
 
-def _call_openai(transcript: str) -> DailyDigest:
+def _call_openai(system_prompt: str, response_model: type, text: str):
     client = _get_openai()
     if client is None:
         raise RuntimeError("OpenAI client unavailable (no OPENAI_API_KEY)")
@@ -314,17 +302,17 @@ def _call_openai(transcript: str) -> DailyDigest:
     return patched.chat.completions.create(
         model=SENTINEL_OPENAI_DIGEST_MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": transcript},
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
         ],
-        response_model=DailyDigest,
+        response_model=response_model,
         temperature=0.2,
         max_retries=2,
     )
 
 
-def _summarize_chunk(transcript: str) -> tuple[DailyDigest, str, int]:
-    """Summarize one transcript chunk. Returns (digest, provider, latency_ms).
+def _dual_provider_call(system_prompt: str, schema: type, text: str):
+    """Run ``schema`` LLM extraction on ``text``: Gemini → OpenAI fallback.
 
     Raises when both providers fail so the run is marked failed and the
     messages stay pending (§9.4).
@@ -333,34 +321,88 @@ def _summarize_chunk(transcript: str) -> tuple[DailyDigest, str, int]:
     errors: list[str] = []
     for provider, call in (("gemini", _call_gemini), ("openai", _call_openai)):
         try:
-            digest = call(transcript)
+            result = call(system_prompt, schema, text)
             latency = int((time.monotonic() - start) * 1000)
-            return digest, provider, latency
+            return result, provider, latency
         except Exception as exc:  # noqa: BLE001 — fall through to fallback
-            logger.warning("%s digest failed: %s", provider, exc)
+            logger.warning("%s call failed: %s", provider, exc)
             errors.append(f"{provider}: {exc}")
     raise RuntimeError(
         "both LLM providers failed — " + " | ".join(errors)
     )
 
 
-async def generate_digest(
-    chunks: list[str],
-) -> tuple[DailyDigest, str, int]:
-    """Summarize all transcript chunks and merge into one digest.
+def _summarize_chunk(transcript: str) -> tuple[PartnerMessageSummary, str, int]:
+    """Summarize one transcript chunk. Returns (summary, provider, latency_ms).
 
-    Returns (merged_digest, providers_used, total_latency_ms); provider is
+    Raises when both providers fail so the run is marked failed and the
+    messages stay pending (§9.4).
+    """
+    return _dual_provider_call(SYSTEM_PROMPT, PartnerMessageSummary, transcript)
+
+
+async def generate_summary(
+    chunks: list[str],
+) -> tuple[PartnerMessageSummary, str, int]:
+    """Summarize all transcript chunks and merge into one summary.
+
+    Returns (merged summary, providers_used, total_latency_ms); provider is
     e.g. ``"gemini"`` or ``"gemini+openai"`` when chunks split across
     providers. Calls run in a thread so the event loop stays responsive.
     """
-    digests: list[DailyDigest] = []
+    summaries: list[PartnerMessageSummary] = []
     providers: list[str] = []
     total_ms = 0
     for chunk in chunks:
-        digest, provider, latency = await asyncio.to_thread(
+        summary, provider, latency = await asyncio.to_thread(
             _summarize_chunk, chunk
         )
-        digests.append(digest)
+        summaries.append(summary)
         providers.append(provider)
         total_ms += latency
-    return merge_digests(digests), "+".join(dict.fromkeys(providers)), total_ms
+    return merge_summaries(summaries), "+".join(dict.fromkeys(providers)), total_ms
+
+
+# --- unanswered messages → admin-facing points (§ content part 2) ---------------
+
+
+def build_unanswered_block(items) -> str:
+    """LLM input listing unanswered messages: one ``[chat] sender: text`` line."""
+    return "\n".join(
+        f"[{item.chat_title}] {item.sender}: {item.excerpt}" for item in items
+    )
+
+
+def _summarize_unanswered_block(
+    block: str,
+) -> tuple[UnansweredSummary, str, int]:
+    return _dual_provider_call(UNANSWERED_SYSTEM_PROMPT, UnansweredSummary, block)
+
+
+async def summarize_unanswered(
+    items: list,
+) -> list[UnansweredPoint]:
+    """Turn detected unanswered messages into short admin-facing points.
+
+    Empty input short-circuits (no LLM call). The LLM must echo chat titles
+    verbatim; points naming unknown chats are dropped (case-insensitive).
+    """
+    if not items:
+        return []
+    block = build_unanswered_block(items)
+    result, _, _ = await asyncio.to_thread(
+        _summarize_unanswered_block, block
+    )
+    allowed = {item.chat_title.casefold(): item.chat_title for item in items}
+    kept: list[UnansweredPoint] = []
+    for point in result.points:
+        canonical = allowed.get(point.group_name.strip().casefold())
+        if canonical is None:
+            logger.warning(
+                "Dropped unanswered point for unknown chat %r", point.group_name
+            )
+            continue
+        kept.append(
+            UnansweredPoint(group_name=canonical, point=point.point.strip())
+        )
+    return kept

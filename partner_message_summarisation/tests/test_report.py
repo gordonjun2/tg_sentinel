@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -11,27 +12,26 @@ from partner_message_summarisation.report import (
     render_report,
     split_report,
 )
-from partner_message_summarisation.summarizer import DailyDigest, Insight
+from partner_message_summarisation.summarizer import (
+    PartnerMessageSummary,
+    GroupSummary,
+    UnansweredPoint,
+)
 
 END = datetime(2026, 9, 18, 11, 0, tzinfo=timezone.utc)  # 19:00 SGT
 START = END - timedelta(days=1)
 
 
-def _digest() -> DailyDigest:
-    return DailyDigest(
-        highlights=["Robot vacuum ships", "Retreat dates locked"],
-        insights=[
-            Insight(
-                title="Robot vacuum launch",
-                detail="Alice demoed the SISC-built vacuum; ships in October.",
-                source_groups=["SISC <> AI Builders"],
-                importance=0.92,
+def _summary() -> PartnerMessageSummary:
+    return PartnerMessageSummary(
+        groups=[
+            GroupSummary(
+                group_name="SISC <> AI Builders",
+                summary="Alice demoed the SISC-built vacuum; ships in October.",
             ),
-            Insight(
-                title="Founders retreat",
-                detail="Dates confirmed for the annual retreat; 40 going.",
-                source_groups=["SISC <> Founders", "SISC <> AI Builders"],
-                importance=0.6,
+            GroupSummary(
+                group_name="SISC <> Founders",
+                summary="Gordon Oh confirmed the retreat dates; 40 going.",
             ),
         ],
     )
@@ -41,59 +41,102 @@ def _counts() -> dict[str, int]:
     return {"SISC <> AI Builders": 96, "SISC <> Founders": 58}
 
 
+def _unanswered() -> list[UnansweredPoint]:
+    return [
+        UnansweredPoint(
+            group_name="SISC <> AI Builders",
+            point="Alice wants to clarify what the panel format is",
+        ),
+        UnansweredPoint(
+            group_name="SISC <> Founders",
+            point="Bob is still deciding whether he can join the retreat",
+        ),
+    ]
+
+
 # -- render_report ----------------------------------------------------------------
 
 
-def test_render_report_snapshot() -> None:
-    report = render_report(_digest(), START, END, _counts())
+def test_render_report_header_title_and_window() -> None:
+    report = render_report(_summary(), START, END, _counts())
     lines = report.split("\n")
-    assert lines[0] == "📜 SISC Daily Digest — Fri 18 Sep 2026"
+    assert lines[0] == "📜 <b>SISC Partners Message Summary</b>"
     assert lines[1] == "Window: 17 Sep 19:00 → 18 Sep 19:00 SGT"
     assert lines[2] == "Groups: 2 · Messages: 154"
-    assert "⭐ Highlights" in report
-    assert "• Robot vacuum ships" in report
-    assert "🔍 Insights" in report
-    assert "1. Robot vacuum launch  (0.92)" in report
-    assert "   Source: SISC <> AI Builders" in report
-    # insights sorted by importance desc
-    assert report.index("Robot vacuum launch") < report.index("Founders retreat")
-    # coverage sorted by count desc
+    # date must not appear in the title (window only)
+    assert "Fri 18 Sep 2026" not in lines[0]
+
+
+def test_render_report_summary_per_group_with_speakers() -> None:
+    report = render_report(_summary(), START, END, _counts())
+    assert "💬 <b>Summary</b>" in report
+    # group titles bolded and angle brackets escaped
+    assert "<b>SISC &lt;&gt; AI Builders</b>" in report
+    assert "<b>SISC &lt;&gt; Founders</b>" in report
+    assert "Alice demoed" in report
+    assert "Gordon Oh confirmed" in report
+
+
+def test_render_report_unanswered_section() -> None:
+    report = render_report(_summary(), START, END, _counts(), _unanswered())
+    assert "❓ <b>Awaiting admin reply</b>" in report
+    assert "<b>SISC &lt;&gt; AI Builders</b>" in report
+    assert "• Alice wants to clarify what the panel format is" in report
+    assert "• Bob is still deciding whether he can join the retreat" in report
+    # points only — no timestamps, no raw quotes
+    assert " at " not in report.split("Awaiting admin reply")[1].split("Coverage")[0]
+    assert "Any update" not in report
+
+
+def test_render_report_no_unanswered() -> None:
+    report = render_report(_summary(), START, END, _counts(), [])
+    assert "None — every partner message has been addressed ✓" in report
+
+
+def test_render_report_coverage_last_and_sorted() -> None:
+    report = render_report(_summary(), START, END, _counts(), _unanswered())
+    assert "🧾 <b>Coverage</b>" in report
     assert (
-        report.index("SISC <> AI Builders — 96 msgs")
-        < report.index("SISC <> Founders — 58 msgs")
+        report.index("SISC &lt;&gt; AI Builders — 96 msgs")
+        < report.index("SISC &lt;&gt; Founders — 58 msgs")
     )
-    assert "🧾 Coverage" in report
+    # coverage is the final section
+    assert report.rstrip().endswith("SISC &lt;&gt; Founders — 58 msgs")
 
 
-def test_render_report_empty_digest() -> None:
-    report = render_report(DailyDigest(), START, END, {})
-    assert "• —" in report
-    assert report.endswith("—")
+def test_render_report_escapes_html_in_content() -> None:
+    summary = PartnerMessageSummary(
+        groups=[GroupSummary(group_name="G", summary="asked <about> <b>tags</b>")]
+    )
+    report = render_report(summary, START, END, {"G": 1}, [])
+    assert "&lt;about&gt; &lt;b&gt;tags&lt;/b&gt;" in report
+
+
+def test_render_report_empty_summary() -> None:
+    report = render_report(PartnerMessageSummary(), START, END, {}, [])
+    assert "—" in report
 
 
 # -- split_report -------------------------------------------------------------------
 
 
 def test_split_short_report_returns_single_part() -> None:
-    report = render_report(_digest(), START, END, _counts())
+    report = render_report(_summary(), START, END, _counts())
     assert split_report(report) == [report]
     assert len(report) <= TELEGRAM_MESSAGE_LIMIT
 
 
 def _big_report(min_len: int) -> str:
-    digest = DailyDigest(
-        highlights=[],
-        insights=[
-            Insight(
-                title=f"Insight number {i} about topic {i}",
-                detail="Word " * 30 + str(i),
-                source_groups=["SISC <> AI Builders"],
-                importance=round(0.9 - i * 0.01, 2),
+    summary = PartnerMessageSummary(
+        groups=[
+            GroupSummary(
+                group_name=f"SISC <> Group {i}",
+                summary="Word " * 30 + str(i),
             )
             for i in range(min_len)
         ],
     )
-    return render_report(digest, START, END, _counts())
+    return render_report(summary, START, END, _counts())
 
 
 def test_split_long_report_order_and_labels() -> None:
@@ -111,9 +154,7 @@ def test_split_long_report_order_and_labels() -> None:
 
 
 def test_split_no_content_loss_on_concatenation() -> None:
-    import re
-
-    for report in (_big_report(60), render_report(_digest(), START, END, _counts())):
+    for report in (_big_report(60), render_report(_summary(), START, END, _counts())):
         parts = split_report(report)
         joined = "\n".join(
             part.replace(f"(Part {i}/{len(parts)})", "").strip()
@@ -133,7 +174,7 @@ def test_split_exact_boundary_respected() -> None:
     assert parts[0].startswith("xxx") and "yyy" in parts[1]
 
 
-def test_split_oversized_single_insight_hard_cut() -> None:
+def test_split_oversized_single_line_hard_cut() -> None:
     huge_line = "z" * (TELEGRAM_MESSAGE_LIMIT * 2 + 100)
     parts = split_report(huge_line)
     assert len(parts) >= 3
@@ -144,6 +185,28 @@ def test_split_oversized_single_insight_hard_cut() -> None:
         p.replace("…(cont)", "").replace("(Part", "").strip()
         for p in parts
     ).startswith("zzz")
+
+
+def test_split_hard_cut_keeps_tags_balanced() -> None:
+    huge_line = "<b>bold start</b> " + "z" * (TELEGRAM_MESSAGE_LIMIT * 2 + 100)
+    parts = split_report(huge_line)
+    for part in parts:
+        assert part.count("<b>") == part.count("</b>")
+        assert part.count("<i>") == part.count("</i>")
+        # no dangling partial tag fragment
+        assert not re.search(r"<[^<>]*$", part)
+
+
+def test_split_trailing_trim_keeps_tags_balanced() -> None:
+    # a hard-cut open bold line sized so the (Part 1/N) label forces the
+    # defensive trim without room to keep the closing tag
+    line = "<b>" + "z" * (TELEGRAM_MESSAGE_LIMIT + 10) + "</b>"
+    parts = split_report(line)
+    assert len(parts) > 1
+    for part in parts:
+        assert len(part) <= TELEGRAM_MESSAGE_LIMIT
+        assert part.count("<b>") == part.count("</b>")
+        assert not re.search(r"<[^<>]*$", part)
 
 
 def test_split_multiple_blank_line_sections() -> None:

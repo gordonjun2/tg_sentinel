@@ -72,6 +72,13 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _fake_unanswered_summarizer(points=None):
+    async def fake(items):
+        return points or []
+
+    return fake
+
+
 def test_empty_day_silent_success_without_delivery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -100,13 +107,16 @@ def test_successful_run_commits_batch(
         delivered.append(parts)
         return True
 
-    async def fake_digest(chunks):
-        from partner_message_summarisation.summarizer import DailyDigest
+    async def fake_summary(chunks):
+        from partner_message_summarisation.summarizer import PartnerMessageSummary
 
-        return DailyDigest(), "fake-provider", 5
+        return PartnerMessageSummary(), "fake-provider", 5
 
     monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
-    monkeypatch.setattr(bot_mod, "generate_digest", fake_digest)
+    monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
+    monkeypatch.setattr(
+        bot_mod, "summarize_unanswered", _fake_unanswered_summarizer()
+    )
     db = FakeDB(pending=_pending_rows())
     _run(bot_mod.run_daily_summary(db, bot_client=None))
     assert db.completed_ids == [11, 12]
@@ -124,13 +134,16 @@ def test_delivery_failure_leaves_batch_pending(
     async def fake_deliver(client, parts):
         return False
 
-    async def fake_digest(chunks):
-        from partner_message_summarisation.summarizer import DailyDigest
+    async def fake_summary(chunks):
+        from partner_message_summarisation.summarizer import PartnerMessageSummary
 
-        return DailyDigest(), "fake-provider", 5
+        return PartnerMessageSummary(), "fake-provider", 5
 
     monkeypatch.setattr(bot_mod, "deliver_report", fake_deliver)
-    monkeypatch.setattr(bot_mod, "generate_digest", fake_digest)
+    monkeypatch.setattr(bot_mod, "generate_summary", fake_summary)
+    monkeypatch.setattr(
+        bot_mod, "summarize_unanswered", _fake_unanswered_summarizer()
+    )
     db = FakeDB(pending=_pending_rows())
     with pytest.raises(RuntimeError, match="delivery failed"):
         _run(bot_mod.run_daily_summary(db, bot_client=None))
@@ -146,7 +159,7 @@ def test_llm_failure_fails_run(
     def boom(chunks):
         raise RuntimeError("both LLM providers failed")
 
-    monkeypatch.setattr(bot_mod, "generate_digest", boom)
+    monkeypatch.setattr(bot_mod, "generate_summary", boom)
     db = FakeDB(pending=_pending_rows())
     with pytest.raises(RuntimeError):
         _run(bot_mod.run_daily_summary(db, bot_client=None))
