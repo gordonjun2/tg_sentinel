@@ -1,0 +1,25 @@
+README.md
+  s_59b5e308b5a1b8::t_90ccbbf0ea83e4 47
+  s_59b5e308b5a1b8::t_297666a55601dc 1,3-7,9,11-17,19,21-25,27-28,30,32,34-46,48-50,54-66,70-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8a8dd4f95204aecf733647d9e9cf568466d23a62",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_59b5e308b5a1b8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f45da72aeffebienIeFA7Efsfn",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
