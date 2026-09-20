@@ -130,14 +130,14 @@ def test_chunking_oversized_single_group_split_with_header(
 def test_merge_unions_groups_across_chunks_and_concats_same_group() -> None:
     d1 = PartnerMessageSummary(
         groups=[
-            GroupSummary(group_name="SISC <> A", summary=["part one"]),
-            GroupSummary(group_name="SISC <> B", summary=["B happened"]),
+            GroupSummary(group_name="SISC <> A", summary=["part one"], has_signal=True),
+            GroupSummary(group_name="SISC <> B", summary=["B happened"], has_signal=True),
         ],
     )
     d2 = PartnerMessageSummary(
         groups=[
-            GroupSummary(group_name="SISC <> A", summary=["part two"]),
-            GroupSummary(group_name="SISC <> C", summary=["C happened"]),
+            GroupSummary(group_name="SISC <> A", summary=["part two"], has_signal=True),
+            GroupSummary(group_name="SISC <> C", summary=["C happened"], has_signal=True),
         ],
     )
     merged = merge_summaries([d1, d2])
@@ -149,7 +149,7 @@ def test_merge_unions_groups_across_chunks_and_concats_same_group() -> None:
 
 def test_merge_single_summary_passthrough() -> None:
     d = PartnerMessageSummary(
-        groups=[GroupSummary(group_name="G", summary=["s1", "s2"])],
+        groups=[GroupSummary(group_name="G", summary=["s1", "s2"], has_signal=True)],
     )
     merged = merge_summaries([d])
     assert merged.groups[0].summary == ["s1", "s2"]
@@ -161,8 +161,8 @@ def test_merge_single_summary_passthrough() -> None:
 def test_sanitize_drops_untrusted_group_names() -> None:
     summary = PartnerMessageSummary(
         groups=[
-            GroupSummary(group_name="SISC <> A", summary=["real"]),
-            GroupSummary(group_name="Invented Group", summary=["made up"]),
+            GroupSummary(group_name="SISC <> A", summary=["real"], has_signal=True),
+            GroupSummary(group_name="Invented Group", summary=["made up"], has_signal=True),
         ],
     )
     clean = sanitize_summary(summary, {"SISC <> A", "SISC <> B"})
@@ -172,7 +172,7 @@ def test_sanitize_drops_untrusted_group_names() -> None:
 
 def test_sanitize_normalizes_group_name_casing() -> None:
     summary = PartnerMessageSummary(
-        groups=[GroupSummary(group_name="sisc <> ai builders", summary=["d"])],
+        groups=[GroupSummary(group_name="sisc <> ai builders", summary=["d"], has_signal=True)],
     )
     clean = sanitize_summary(summary, {"SISC <> AI Builders"})
     assert clean.groups[0].group_name == "SISC <> AI Builders"
@@ -197,6 +197,7 @@ def test_generate_summary_merges_chunk_results(
                     GroupSummary(
                         group_name=marker,
                         summary=[f"point in {marker}"],
+                        has_signal=True,
                     )
                 ],
             ),
@@ -297,3 +298,19 @@ def test_summarize_unanswered_calls_llm_and_filters_unknown_chats(
             point="Alice wants to clarify what the panel format is",
         )
     ]  # unknown-chat point dropped
+
+
+def test_response_schema_has_no_gemini_unsupported_defaults() -> None:
+    """Gemini's structured-output API rejects schemas containing `default`.
+
+    Scalar pydantic defaults emit a "default" key into the JSON schema;
+    ``default_factory`` does not. This pins every LLM-facing model to stay
+    free of scalar defaults (regression guard for provider compatibility).
+    """
+    import json
+
+    from partner_message_summarisation.summarizer import UnansweredPoint
+
+    for model in (PartnerMessageSummary, GroupSummary, UnansweredPoint):
+        schema = json.dumps(model.model_json_schema())
+        assert '"default"' not in schema, f"{model.__name__} has a scalar default"

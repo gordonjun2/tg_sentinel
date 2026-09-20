@@ -46,10 +46,11 @@ class GroupSummary(BaseModel):
         "each point ONE concrete item naming who said/asked/proposed what",
     )
     has_signal: bool = Field(
-        default=True,
-        description="False when the conversation carries nothing actionable or "
-        "informational (only thanks/greetings/acknowledgements/emoji). "
-        "True when there is substance worth informing the admins about.",
+        ...,
+        description="Whether the conversation carries anything actionable or "
+        "informational for the admins. Set false ONLY when it is purely "
+        "thanks/greetings/acknowledgements/emoji with no substance. "
+        "When in doubt, set true.",
     )
 
 
