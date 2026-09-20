@@ -71,6 +71,20 @@ bash start_all.sh    # main bot + this service; skips anything already running
 
 The service is SIGTERM-safe: `kill <pid>` leaves any in-flight batch `pending` (never half-completed), and missed messages are recovered by the bounded catch-up on next start.
 
+## Initial scrape (backfill)
+
+The service deliberately starts from "now" — first-ever chats do **not** import history. To seed the archive with recent group history, use the one-shot backfill (while the service is **stopped** — two processes can't share one Pyrogram session):
+
+```bash
+kill <summarisation-pid>                                            # stop the service
+python -m partner_message_summarisation.backfill                    # newest 200 per group
+python -m partner_message_summarisation.backfill --limit 500        # more per group
+python -m partner_message_summarisation.backfill --chat "AI Builders"  # one group only
+bash start_all.sh                                                   # resume
+```
+
+Scraped messages are deduplicated (safe to re-run) and land as `pending`, so the next scheduled digest covers them; transcript caps chunk large backlogs across multiple LLM calls.
+
 ## Runbook
 
 - **Session expired / re-login**: `python -m partner_message_summarisation.login` again (tmux on
