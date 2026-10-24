@@ -231,6 +231,21 @@ LEVEL_LABELS = {
 
 _CATEGORY_ASCII = {"tech": "Tech", "ai": "AI", "crypto": "Crypto"}
 
+# registration_availability enum (from luma.com's own UI labels)
+REGISTRATION_LABELS = {
+    "open": "Open for registration",
+    "waitlist": "Full - waitlist only",
+    "sold-out": "Sold out",
+    "coming-soon": "Coming soon (not yet open)",
+}
+
+
+def registration_label(entry: dict) -> str:
+    ra = entry.get("registration_availability")
+    if ra == "open" and entry.get("near_capacity"):
+        return "Open (near capacity)"
+    return REGISTRATION_LABELS.get(ra, "NA")
+
 _ASCII_FOLDS = {
     "\u2018": "'",
     "\u2019": "'",
@@ -600,6 +615,11 @@ def _event_table(entry: dict) -> str:
         rows.append(("Where", entry["venue"]))
     if entry.get("context"):
         rows.append(("What", entry["context"]))
+    if entry.get("show_guest_list"):
+        rows.append(("Guests", f"{entry.get('guest_count', 0)} registered"))
+    else:
+        rows.append(("Guests", "NA (hidden by host)"))
+    rows.append(("Status", registration_label(entry)))
     rows.append(("Food", LEVEL_LABELS[entry["level"]]))
     if entry.get("food_evidence"):
         rows.append(
@@ -650,7 +670,7 @@ def build_digest(new_entries: list, period_label: str) -> list:
     plural = "event" if len(new_entries) == 1 else "events"
     header = (
         f"🍜 <b>Luma SG — {len(new_entries)} new {plural} with food</b>\n"
-        f"<i>🕒 Newly listed on Luma SG between {html.escape(period_label)}</i>\n\n"
+        f"<i>🕒 Scanned: {html.escape(period_label)}</i>\n\n"
     )
     messages = []
     current = header
@@ -723,6 +743,9 @@ def entry_from_api(entry: dict, category: str) -> Optional[dict]:
         "category": category,
         "venue": address,
         "guest_count": entry.get("guest_count") or 0,
+        "show_guest_list": bool(event.get("show_guest_list")),
+        "registration_availability": entry.get("registration_availability"),
+        "near_capacity": bool((entry.get("ticket_info") or {}).get("is_near_capacity")),
     }
 
 
