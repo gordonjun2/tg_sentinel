@@ -26,7 +26,7 @@ from config import (
     BOT_TOKEN,
     ADMIN_GROUP_ID,
     TARGET_GROUP_ID,
-    TARGET_PUBLIC_GROUP_ID,
+    SUB_TARGET_GROUP_ID,
     SURVEY_QUESTIONS,
     WELCOME_MESSAGES,
     WELCOME_BATCH_INTERVAL_MINUTES,
@@ -564,8 +564,8 @@ async def handle_admin_decision(
 
     # Target group depends on which approve button was pressed
     if action == "approve_sub":
-        target_group_id = TARGET_PUBLIC_GROUP_ID
-        target_label = "public group"
+        target_group_id = SUB_TARGET_GROUP_ID
+        target_label = "sub group"
     else:
         target_group_id = TARGET_GROUP_ID
         target_label = "main group"
