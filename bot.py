@@ -416,10 +416,12 @@ async def handle_survey_response(
             [
                 InlineKeyboardButton(
                     "Approve (Main)", callback_data=f"approve_main_{user_id}"
-                ),
+                )
+            ],
+            [
                 InlineKeyboardButton(
                     "Approve (Sub)", callback_data=f"approve_sub_{user_id}"
-                ),
+                )
             ],
             [InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")],
         ]
@@ -538,10 +540,12 @@ async def handle_survey_option_selection(
                 [
                     InlineKeyboardButton(
                         "Approve (Main)", callback_data=f"approve_main_{user_id}"
-                    ),
+                    )
+                ],
+                [
                     InlineKeyboardButton(
                         "Approve (Sub)", callback_data=f"approve_sub_{user_id}"
-                    ),
+                    )
                 ],
                 [InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")],
             ]
