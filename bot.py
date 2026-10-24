@@ -986,6 +986,109 @@ async def reset_pending_approval_command(
         await update.message.reply_text("No pending approval records found to clear.")
 
 
+async def invite_main_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Invite a sub group member to the main group via a one-time invite link.
+
+    The user stays in the sub group; they just receive a fresh main-group
+    invite link (member_limit=1) in a private message.
+    """
+    # Only allow in admin group
+    if update.effective_chat.id != ADMIN_GROUP_ID:
+        await update.message.reply_text(
+            "This command can only be used in the admin group."
+        )
+        return
+
+    parts = (update.message.text or "").split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            "Usage: /invite_main @username or /invite_main <user_id>"
+        )
+        return
+    identifier = parts[1].strip().lstrip("@")
+
+    # Resolve the user: numeric ID directly, otherwise look up username in DB
+    user_id = None
+    if identifier.isdigit():
+        user_id = int(identifier)
+    else:
+        for user in db.get_all_users():
+            if (
+                user.username
+                and user.username.lstrip("@").lower() == identifier.lower()
+            ):
+                user_id = user.user_id
+                break
+        if user_id is None:
+            await update.message.reply_text(
+                f"❌ Couldn't resolve @{identifier}. Use their numeric Telegram "
+                "user ID, or have them /start the bot once so they are in the "
+                "database."
+            )
+            return
+
+    # Verify the user is actually a member of the sub group
+    try:
+        member = await context.bot.get_chat_member(TARGET_SUB_GROUP_ID, user_id)
+        if member.status not in ("member", "administrator", "creator"):
+            await update.message.reply_text(
+                f"❌ User {member.user.username or user_id} is not a member of "
+                f"the sub group (status: {member.status})."
+            )
+            return
+        username = member.user.username
+    except telegram.error.BadRequest:
+        await update.message.reply_text(
+            f"❌ Couldn't find user {identifier} in the sub group."
+        )
+        return
+
+    # Reuse the existing DB record if present; otherwise create one
+    user_data = db.get_user(user_id)
+    if user_data is None:
+        user_data = db.create_user(user_id, username)
+
+    user_data.username = username or user_data.username
+    user_data.state = UserState.APPROVED
+
+    try:
+        # Revoke previous links and create a new one-time link for the main group
+        # (also persists invite_links + state via update_user)
+        invite_link = await revoke_and_create_invite_link(
+            context.bot, user_data, TARGET_GROUP_ID
+        )
+    except telegram.error.BadRequest as e:
+        if "rights to manage chat invite link" in str(e).lower():
+            await update.message.reply_text(
+                "⚠️ Cannot create invite link because bot needs admin rights "
+                "in the main group."
+            )
+            return
+        raise e
+
+    # Notify the user
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "You've been invited to join the main group! "
+                f"Click here to join: {invite_link}"
+            ),
+        )
+        await update.message.reply_text(
+            f"✅ Main group invite sent to {user_data.username or user_id} "
+            "(one-time link)."
+        )
+    except telegram.error.Forbidden:
+        await update.message.reply_text(
+            f"⚠️ Invite link created but couldn't message the user "
+            f"(they need to /start the bot first). Link for {user_data.username or user_id}: "
+            f"{invite_link}"
+        )
+
+
 async def upload_to_drive(bot, csv_path: str) -> None:
     """Upload CSV file to Google Drive asynchronously."""
     try:
@@ -1665,6 +1768,7 @@ def main() -> None:
         ("help", "Show admin commands and features"),
         ("export", "Export user data to CSV"),
         ("stats", "Show current statistics"),
+        ("invite_main", "Invite a sub group member to the main group"),
         ("transcribe_audio", "Transcribe an audio file"),
         ("check_transcription_status", "Check status of ongoing transcription"),
         ("enable_ai_insights", "Enable AI enrichment (target group)"),
@@ -1733,6 +1837,9 @@ def main() -> None:
     )
     application.add_handler(
         CommandHandler("stats", stats_command, filters=admin_group_filter)
+    )
+    application.add_handler(
+        CommandHandler("invite_main", invite_main_command, filters=admin_group_filter)
     )
     application.add_handler(
         CommandHandler(
