@@ -650,7 +650,7 @@ def build_digest(new_entries: list, period_label: str) -> list:
     plural = "event" if len(new_entries) == 1 else "events"
     header = (
         f"🍜 <b>Luma SG — {len(new_entries)} new {plural} with food</b>\n"
-        f"<i>🕒 Scanned: {html.escape(period_label)}</i>\n\n"
+        f"<i>🕒 Newly listed on Luma SG between {html.escape(period_label)}</i>\n\n"
     )
     messages = []
     current = header
