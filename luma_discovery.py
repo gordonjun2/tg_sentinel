@@ -678,7 +678,7 @@ def build_digest(new_entries: list, period_label: str) -> list:
         block = _format_event_block(idx, entry)
         if len(current) + len(block) + 2 > TG_MAX_CHARS:
             messages.append(current.rstrip() + "\n")
-            current = "🍜 <b>Luma SG (cont.)</b>\n\n"
+            current = "🍜 Luma SG with food (cont.)\n\n"
         current += block + "\n\n"
     messages.append(current.rstrip() + "\n")
     return messages
