@@ -239,3 +239,6 @@ vertex_sa.json
 
 # Compressed archives
 *.gz
+
+# Scratch/example outputs and generated discovery reports
+tmp/
