@@ -26,6 +26,15 @@ try:
 except ValueError:
     raise ValueError("TARGET_GROUP_ID must be a valid integer")
 
+# Public (sub) target group used by the gating flow's "Approve (Sub)" action
+TARGET_PUBLIC_GROUP_ID = os.getenv("TARGET_PUBLIC_GROUP_ID")
+if not TARGET_PUBLIC_GROUP_ID:
+    raise ValueError("TARGET_PUBLIC_GROUP_ID not found in environment variables")
+try:
+    TARGET_PUBLIC_GROUP_ID = int(TARGET_PUBLIC_GROUP_ID)
+except ValueError:
+    raise ValueError("TARGET_PUBLIC_GROUP_ID must be a valid integer")
+
 GOOGLE_DRIVE_MAIN_FOLDER_ID = os.getenv("GOOGLE_DRIVE_MAIN_FOLDER_ID")
 if not GOOGLE_DRIVE_MAIN_FOLDER_ID:
     raise ValueError("GOOGLE_DRIVE_MAIN_FOLDER_ID not found in environment variables")

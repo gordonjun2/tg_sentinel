@@ -26,6 +26,7 @@ from config import (
     BOT_TOKEN,
     ADMIN_GROUP_ID,
     TARGET_GROUP_ID,
+    TARGET_PUBLIC_GROUP_ID,
     SURVEY_QUESTIONS,
     WELCOME_MESSAGES,
     WELCOME_BATCH_INTERVAL_MINUTES,
@@ -80,20 +81,23 @@ def get_peer_type(peer_id: int) -> str:
 utils.get_peer_type = get_peer_type
 
 
-async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
+async def revoke_and_create_invite_link(
+    bot, user_data: UserData, target_group_id: int = TARGET_GROUP_ID
+) -> str:
     """Revoke user's previous invite links and create a new one."""
     try:
         # Revoke user's previous invite links
+        # (links that belong to the other group fail revocation and are skipped)
         for link_id in user_data.invite_links:
             try:
-                await bot.revoke_chat_invite_link(TARGET_GROUP_ID, link_id)
+                await bot.revoke_chat_invite_link(target_group_id, link_id)
             except telegram.error.BadRequest:
                 # Skip if link is already revoked or invalid
                 continue
 
         # Create new invite link with member limit of 1
         new_link = await bot.create_chat_invite_link(
-            chat_id=TARGET_GROUP_ID, member_limit=1
+            chat_id=target_group_id, member_limit=1
         )
 
         # Update user's invite links
@@ -398,9 +402,14 @@ async def handle_survey_response(
 
         keyboard = [
             [
-                InlineKeyboardButton("Approve", callback_data=f"approve_{user_id}"),
-                InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}"),
-            ]
+                InlineKeyboardButton(
+                    "Approve (Main)", callback_data=f"approve_main_{user_id}"
+                ),
+                InlineKeyboardButton(
+                    "Approve (Sub)", callback_data=f"approve_sub_{user_id}"
+                ),
+            ],
+            [InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -515,9 +524,14 @@ async def handle_survey_option_selection(
 
             keyboard = [
                 [
-                    InlineKeyboardButton("Approve", callback_data=f"approve_{user_id}"),
-                    InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}"),
-                ]
+                    InlineKeyboardButton(
+                        "Approve (Main)", callback_data=f"approve_main_{user_id}"
+                    ),
+                    InlineKeyboardButton(
+                        "Approve (Sub)", callback_data=f"approve_sub_{user_id}"
+                    ),
+                ],
+                [InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -539,7 +553,8 @@ async def handle_admin_decision(
     await query.answer()
 
     # Extract decision and user_id from callback data
-    action, user_id = query.data.split("_")
+    # (approve_main_<id>, approve_sub_<id> or reject_<id>)
+    action, user_id = query.data.rsplit("_", 1)
     user_id = int(user_id)
     user_data = db.get_user(user_id)
 
@@ -547,9 +562,17 @@ async def handle_admin_decision(
         await query.edit_message_text("User not found in database.")
         return
 
-    # Check if user is already in target group
+    # Target group depends on which approve button was pressed
+    if action == "approve_sub":
+        target_group_id = TARGET_PUBLIC_GROUP_ID
+        target_label = "public group"
+    else:
+        target_group_id = TARGET_GROUP_ID
+        target_label = "main group"
+
+    # Check if user is already in the target group
     try:
-        member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
+        member = await context.bot.get_chat_member(target_group_id, user_id)
         if member.status not in ["left", "kicked", "banned"]:
             await query.edit_message_text(
                 "User is already a member of the target group."
@@ -563,7 +586,9 @@ async def handle_admin_decision(
     if user_data.state == UserState.APPROVED:
         try:
             # Revoke old links and generate new one
-            invite_link = await revoke_and_create_invite_link(context.bot, user_data)
+            invite_link = await revoke_and_create_invite_link(
+                context.bot, user_data, target_group_id
+            )
 
             # Notify user with new link
             await context.bot.send_message(
@@ -592,7 +617,7 @@ async def handle_admin_decision(
         await query.edit_message_text("This request is no longer valid.")
         return
 
-    if action == "approve":
+    if action in ("approve_main", "approve_sub"):
         # If user was in pending rejection, clean up the rejection message
         if (
             user_data.state == UserState.PENDING_REJECTION
@@ -609,7 +634,9 @@ async def handle_admin_decision(
 
         try:
             # Revoke old links and generate new one
-            invite_link = await revoke_and_create_invite_link(context.bot, user_data)
+            invite_link = await revoke_and_create_invite_link(
+                context.bot, user_data, target_group_id
+            )
 
             # If invite link creation successful, proceed with approval
             user_data.state = UserState.APPROVED
@@ -625,7 +652,10 @@ async def handle_admin_decision(
             await query.edit_message_reply_markup(reply_markup=None)
             await context.bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
-                text=f"Request from {user_data.username or user_id} has been approved.",
+                text=(
+                    f"Request from {user_data.username or user_id} has been approved "
+                    f"for the {target_label}."
+                ),
             )
 
             # Export and upload data
@@ -1806,7 +1836,9 @@ def main() -> None:
 
     # Add message handlers
     application.add_handler(
-        CallbackQueryHandler(handle_admin_decision, pattern=r"^(approve|reject)_")
+        CallbackQueryHandler(
+            handle_admin_decision, pattern=r"^(approve_main|approve_sub|reject)_"
+        )
     )
     # application.add_handler(CallbackQueryHandler(handle_survey_back_navigation, pattern=r'^survey_back$'))
     application.add_handler(CallbackQueryHandler(handle_survey_option_selection))
