@@ -1030,6 +1030,18 @@ async def invite_main_command(
             )
             return
 
+    # Skip if the user is already in the main group
+    try:
+        main_member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
+        if main_member.status in ("member", "administrator", "creator"):
+            await update.message.reply_text(
+                f"ℹ️ User {main_member.user.username or user_id} is already a "
+                "member of the main group — no invite sent."
+            )
+            return
+    except telegram.error.BadRequest:
+        pass  # not in the main group, continue
+
     # Verify the user is actually a member of the sub group
     try:
         member = await context.bot.get_chat_member(TARGET_SUB_GROUP_ID, user_id)
