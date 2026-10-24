@@ -640,6 +640,7 @@ async def handle_admin_decision(
 
             # If invite link creation successful, proceed with approval
             user_data.state = UserState.APPROVED
+            user_data.approval_group = "sub" if action == "approve_sub" else "main"
             db.update_user(user_data)
 
             # Notify user
@@ -1052,6 +1053,7 @@ async def invite_main_command(
 
     user_data.username = username or user_data.username
     user_data.state = UserState.APPROVED
+    user_data.approval_group = "main"
 
     try:
         # Revoke previous links and create a new one-time link for the main group

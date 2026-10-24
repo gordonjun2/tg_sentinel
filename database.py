@@ -37,6 +37,9 @@ class UserData:
     answers: Dict[str, str]
     join_datetime: datetime
     invite_links: List[str] = None  # List of invite link IDs given to this user
+    approval_group: Optional[str] = (
+        None  # Which group the approval was for: "main" or "sub"
+    )
     rejection_message_id: Optional[int] = (
         None  # Message ID for rejection reason request
     )
@@ -69,6 +72,7 @@ class Database:
                         answers TEXT,
                         join_datetime TEXT,
                         invite_links TEXT,
+                        approval_group TEXT,
                         rejection_message_id INTEGER
                     )
                 """)
@@ -87,6 +91,12 @@ class Database:
                         ALTER TABLE users 
                         ADD COLUMN invite_links TEXT 
                         DEFAULT '[]'
+                    """)
+                if "approval_group" not in columns:
+                    cursor.execute("""
+                        ALTER TABLE users 
+                        ADD COLUMN approval_group TEXT 
+                        DEFAULT NULL
                     """)
                 if "rejection_message_id" not in columns:
                     cursor.execute("""
@@ -216,6 +226,7 @@ class Database:
             answers,
             join_datetime,
             invite_links,
+            approval_group,
             rejection_message_id,
         ) = row
         return UserData(
@@ -228,6 +239,7 @@ class Database:
             if join_datetime
             else datetime.now(timezone.utc),
             invite_links=json.loads(invite_links) if invite_links else [],
+            approval_group=approval_group,
             rejection_message_id=rejection_message_id,
         )
 
@@ -235,7 +247,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users WHERE user_id = ?",
+                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id FROM users WHERE user_id = ?",
                 (user_id,),
             )
             row = cursor.fetchone()
@@ -256,8 +268,8 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO users (user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user.user_id,
@@ -267,6 +279,7 @@ class Database:
                     json.dumps(user.answers),
                     user.join_datetime.isoformat(),
                     json.dumps(user.invite_links),
+                    user.approval_group,
                     user.rejection_message_id,
                 ),
             )
@@ -279,7 +292,7 @@ class Database:
             cursor.execute(
                 """
                 UPDATE users
-                SET username = ?, state = ?, current_question = ?, answers = ?, join_datetime = ?, invite_links = ?, rejection_message_id = ?
+                SET username = ?, state = ?, current_question = ?, answers = ?, join_datetime = ?, invite_links = ?, approval_group = ?, rejection_message_id = ?
                 WHERE user_id = ?
                 """,
                 (
@@ -289,6 +302,7 @@ class Database:
                     json.dumps(user_data.answers),
                     user_data.join_datetime.isoformat(),
                     json.dumps(user_data.invite_links),
+                    user_data.approval_group,
                     user_data.rejection_message_id,
                     user_data.user_id,
                 ),
@@ -300,7 +314,7 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id
+                SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id
                 FROM users
                 WHERE state = ?
                 """,
@@ -313,7 +327,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, rejection_message_id FROM users"
+                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id FROM users"
             )
             return [self._user_data_from_row(row) for row in cursor.fetchall()]
 
