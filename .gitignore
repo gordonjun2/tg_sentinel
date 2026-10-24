@@ -236,3 +236,6 @@ partner_message_summarisation/*.session-journal
 
 # Service account keys
 vertex_sa.json
+
+# Compressed archives
+*.gz

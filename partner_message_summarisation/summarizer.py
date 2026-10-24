@@ -28,6 +28,7 @@ from .config import (
     SENTINEL_OPENAI_DIGEST_MODEL,
 )
 from .timeutil import fmt_sentinel
+from llm_chain import run_llm_chain
 
 logger = logging.getLogger(__name__)
 
@@ -350,23 +351,20 @@ def _call_openai(system_prompt: str, response_model: type, text: str):
 def _dual_provider_call(system_prompt: str, schema: type, text: str):
     """Run ``schema`` LLM extraction on ``text``: Gemini → OpenAI fallback.
 
-    Raises when both providers fail so the run is marked failed and the
-    messages stay pending (§9.4).
+    Providers are tried via the shared cost-ordered chain with circuit
+    breaking (llm_chain.py). Raises when both providers fail so the run
+    is marked failed and the messages stay pending (§9.4).
     """
     start = time.monotonic()
-    errors: list[str] = []
-    # Gemini first (Vertex AI / AI Studio); OpenAI is the fallback provider.
-    for provider, call in (("gemini", _call_gemini), ("openai", _call_openai)):
-        try:
-            result = call(system_prompt, schema, text)
-            latency = int((time.monotonic() - start) * 1000)
-            return result, provider, latency
-        except Exception as exc:  # noqa: BLE001 — fall through to fallback
-            logger.warning("%s call failed: %s", provider, exc)
-            errors.append(f"{provider}: {exc}")
-    raise RuntimeError(
-        "both LLM providers failed — " + " | ".join(errors)
+    outcome = run_llm_chain(
+        "digest",
+        [
+            ("gemini", SENTINEL_DIGEST_MODEL, lambda: _call_gemini(system_prompt, schema, text)),
+            ("openai", SENTINEL_OPENAI_DIGEST_MODEL, lambda: _call_openai(system_prompt, schema, text)),
+        ],
     )
+    latency = int((time.monotonic() - start) * 1000)
+    return outcome.result, outcome.provider, latency
 
 
 def _summarize_chunk(transcript: str) -> tuple[PartnerMessageSummary, str, int]:

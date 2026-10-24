@@ -21,6 +21,7 @@ from config import (
     OPENAI_API_KEY,
     OPENAI_ENRICHMENT_MODEL,
 )
+from llm_chain import LLMChainError, run_llm_chain
 
 logger = logging.getLogger(__name__)
 
@@ -96,54 +97,46 @@ def _user_prompt(email: dict) -> str:
     )
 
 
-def _score_with_gemini(email: dict) -> ImportanceResult | None:
+def _score_with_gemini(email: dict) -> ImportanceResult:
     client = _get_gemini()
     if client is None:
-        return None
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_ENRICHMENT_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                response_schema=ImportanceResult,
-                temperature=0.2,
-            ),
-            contents=_user_prompt(email),
-        )
-        # When response_schema is set, the SDK validates and parses.
-        data = response.parsed
-        if isinstance(data, ImportanceResult):
-            return data
-        # Fall through to manual parse if parsed is a dict.
-        if isinstance(data, dict):
-            return ImportanceResult.model_validate(data)
-        return ImportanceResult.model_validate_json(response.text)
-    except Exception as exc:
-        logger.warning("Gemini scoring failed: %s", exc)
-        return None
+        raise RuntimeError("Gemini client unavailable (no GEMINI_API_KEY)")
+    response = client.models.generate_content(
+        model=GEMINI_ENRICHMENT_MODEL,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=ImportanceResult,
+            temperature=0.2,
+        ),
+        contents=_user_prompt(email),
+    )
+    # When response_schema is set, the SDK validates and parses.
+    data = response.parsed
+    if isinstance(data, ImportanceResult):
+        return data
+    # Fall through to manual parse if parsed is a dict.
+    if isinstance(data, dict):
+        return ImportanceResult.model_validate(data)
+    return ImportanceResult.model_validate_json(response.text)
 
 
-def _score_with_openai(email: dict) -> ImportanceResult | None:
+def _score_with_openai(email: dict) -> ImportanceResult:
     client = _get_openai()
     if client is None:
-        return None
-    try:
-        # instructor patches the OpenAI SDK to return the Pydantic model.
-        patched = instructor.from_openai(client)
-        return patched.chat.completions.create(
-            model=OPENAI_ENRICHMENT_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": _user_prompt(email)},
-            ],
-            response_model=ImportanceResult,
-            temperature=0.2,
-            max_retries=2,
-        )
-    except Exception as exc:
-        logger.warning("OpenAI scoring failed: %s", exc)
-        return None
+        raise RuntimeError("OpenAI client unavailable (no OPENAI_API_KEY)")
+    # instructor patches the OpenAI SDK to return the Pydantic model.
+    patched = instructor.from_openai(client)
+    return patched.chat.completions.create(
+        model=OPENAI_ENRICHMENT_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _user_prompt(email)},
+        ],
+        response_model=ImportanceResult,
+        temperature=0.2,
+        max_retries=2,
+    )
 
 
 def score_email(email: dict) -> ImportanceResult | None:
@@ -152,7 +145,15 @@ def score_email(email: dict) -> ImportanceResult | None:
     Returning None means "no signal" — caller should treat that as
     NOT important (don't forward on uncertainty).
     """
-    result = _score_with_gemini(email)
-    if result is not None:
-        return result
-    return _score_with_openai(email)
+    try:
+        outcome = run_llm_chain(
+            "email_importance",
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, lambda: _score_with_gemini(email)),
+                ("openai", OPENAI_ENRICHMENT_MODEL, lambda: _score_with_openai(email)),
+            ],
+        )
+        return outcome.result
+    except LLMChainError as exc:
+        logger.error("email importance scoring failed on all providers: %s", exc)
+        return None

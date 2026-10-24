@@ -25,6 +25,7 @@ from config import (
     TELEGRAM_API_KEY,
     TELEGRAM_HASH,
 )
+from llm_chain import LLMChainError, run_llm_chain
 from luma_scraper import SGT, get_event_details
 
 logging.basicConfig(
@@ -81,7 +82,8 @@ def generate_reminder_message(event_dt: datetime, event_name: str, event_desc: s
         f"Event date/time: {friendly_time}\n\n"
         f"Write a fun reminder message for this event."
     )
-    try:
+
+    def _via_gemini() -> str:
         response = gemini_client.models.generate_content(
             model=GEMINI_ENRICHMENT_MODEL,
             config=types.GenerateContentConfig(
@@ -90,23 +92,30 @@ def generate_reminder_message(event_dt: datetime, event_name: str, event_desc: s
             ),
             contents=user_prompt,
         )
-        return response.text.strip() or None
-    except Exception as e:
-        logger.warning(f"Gemini failed: {e}")
+        return response.text.strip() or ""
 
-    if openai_client:
-        try:
-            response = openai_client.responses.create(
-                model=OPENAI_ENRICHMENT_MODEL,
-                instructions=REMINDER_SYSTEM_PROMPT,
-                input=user_prompt,
-            )
-            return response.output_text.strip() or None
-        except Exception as e:
-            logger.warning(f"OpenAI fallback failed: {e}")
+    def _via_openai() -> str:
+        if openai_client is None:
+            raise RuntimeError("OpenAI client not configured")
+        response = openai_client.responses.create(
+            model=OPENAI_ENRICHMENT_MODEL,
+            instructions=REMINDER_SYSTEM_PROMPT,
+            input=user_prompt,
+        )
+        return response.output_text.strip() or ""
 
-    logger.error("Both Gemini and OpenAI failed to generate reminder.")
-    return None
+    try:
+        outcome = run_llm_chain(
+            "luma_reminder",
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
+                ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
+            ],
+        )
+        return outcome.result or None
+    except LLMChainError as e:
+        logger.error(f"LLM chain failed to generate reminder: {e}")
+        return None
 
 
 PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")

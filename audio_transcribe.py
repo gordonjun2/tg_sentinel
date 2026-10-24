@@ -1,5 +1,3 @@
-import whisper
-import whisperx
 import time  # Add time module for timing
 import os
 import sys
@@ -7,9 +5,10 @@ import time
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from openai import OpenAI
 from typing import List
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, GEMINI_ENRICHMENT_MODEL, OPENAI_API_KEY, OPENAI_ENRICHMENT_MODEL
+from llm_chain import LLMChainError, run_llm_chain
 from utils import (
     chunk_audio_with_overlap,
     remove_overlap_text,
@@ -34,22 +33,75 @@ class AudioTranscriber:
         self.chunk_size_in_token = 32000
         self.chunk_size_in_len = self.chunk_size_in_token * 4
 
-        # Load model and audio
-        if self.asr_model.lower() == "whisper":
-            self.model = whisper.load_model("turbo", self.device)
-        else:
-            self.model = whisperx.load_model(
-                "medium", self.device, compute_type=self.compute_type
-            )
+        # Model is loaded lazily on first transcribe() call so importing this
+        # module (e.g. from bot.py) does not pull torch/whisperx into memory.
+        self._model = None
 
         self.gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        self.openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+    def _generate_text(self, system_instruction: str, contents: str, task: str) -> str:
+        def _via_gemini() -> str:
+            response = self.gemini_client.models.generate_content(
+                model=GEMINI_ENRICHMENT_MODEL,
+                config=types.GenerateContentConfig(system_instruction=system_instruction),
+                contents=contents,
+            )
+            return response.text
+
+        def _via_openai() -> str:
+            if self.openai_client is None:
+                raise RuntimeError("OpenAI client not configured")
+            response = self.openai_client.responses.create(
+                model=OPENAI_ENRICHMENT_MODEL,
+                instructions=system_instruction,
+                input=contents,
+            )
+            return response.output_text
+
+        outcome = run_llm_chain(
+            task,
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
+                ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
+            ],
+        )
+        return outcome.result
+
+    def _ensure_model(self):
+        if self._model is None:
+            if self.asr_model.lower() == "whisper":
+                import whisper
+
+                self._model = whisper.load_model("turbo", self.device)
+            else:
+                import whisperx
+
+                self._model = whisperx.load_model(
+                    "medium", self.device, compute_type=self.compute_type
+                )
+        return self._model
+
+    @staticmethod
+    def _default_progress(current: int, total: int) -> None:
+        # Used in CLI/subprocess mode: bot.py parses these lines for progress
+        print(f"PROGRESS:{current}:{total}", flush=True)
 
     def transcribe(self, audio_file, progress_callback=None):
-        # Load model and audio
+        if progress_callback is None:
+            progress_callback = self._default_progress
+
+        # Load audio (imports stay lazy to keep module import cheap)
         if self.asr_model.lower() == "whisper":
+            import whisper
+
             audio = whisper.load_audio(audio_file)
         else:
+            import whisperx
+
             audio = whisperx.load_audio(audio_file)
+
+        model = self._ensure_model()
 
         # Chunk audio
         audio_chunks = chunk_audio_with_overlap(
@@ -71,7 +123,7 @@ class AudioTranscriber:
             chunk_start_time = time.time()
 
             # Transcribe the chunk
-            result = self.model.transcribe(chunk, language=self.language)
+            result = model.transcribe(chunk, language=self.language)
 
             # Keep only segments after chunk_start
             chunk_text = " ".join(
@@ -112,6 +164,9 @@ class AudioTranscriber:
                 text = f.read()
 
             # Initialize the text splitter
+            # (lazy import: langchain pulls in torch at import time)
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=self.chunk_size_in_len,
                 chunk_overlap=self.chunk_size_in_len * 0.01,
@@ -125,12 +180,8 @@ class AudioTranscriber:
             # Process each chunk and collect responses
             chunk_responses = []
             for i, chunk in enumerate(chunks, 1):
-                response = self.gemini_client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    config=types.GenerateContentConfig(system_instruction=sys_msg),
-                    contents=chunk,
-                )
-                chunk_responses.append(response.text)
+                response = self._generate_text(sys_msg, chunk, task="insight_chunk")
+                chunk_responses.append(response)
 
                 # Sleep for 10 seconds between chunks
                 time.sleep(10)
@@ -139,15 +190,9 @@ class AudioTranscriber:
             combined_responses = "\n\n".join(chunk_responses)
 
             # Generate final summary
-            final_response = self.gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                config=types.GenerateContentConfig(
-                    system_instruction=sys_msg_final_summary
-                ),
-                contents=combined_responses,
+            final_text = self._generate_text(
+                sys_msg_final_summary, combined_responses, task="insight_summary"
             )
-
-            final_text = final_response.text
 
             # Get base filename from transcription file path
             # Remove _transcription.txt to get the original base filename
@@ -176,11 +221,29 @@ class AudioTranscriber:
 
 
 if __name__ == "__main__":
-    transcriber = AudioTranscriber()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Transcription / insight tools")
+    parser.add_argument(
+        "--transcribe",
+        metavar="AUDIO_FILE",
+        help="transcribe an audio file with whisperx, then exit (designed to "
+        "run as a subprocess so all model memory is freed on exit)",
+    )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        help="transcription text file for discussion insight extraction",
+    )
+    args = parser.parse_args()
+
+    if args.transcribe:
+        AudioTranscriber().transcribe(args.transcribe)
+        sys.exit(0)
 
     # Get file path from command line argument or prompt user
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
+    if args.file:
+        file_path = args.file
     else:
         file_path = input("Enter the transcription file path: ").strip()
 
@@ -192,7 +255,7 @@ if __name__ == "__main__":
     # Extract discussion insights
     print(f"Processing file: {file_path}")
     try:
-        transcriber.extract_discussion_insight(file_path)
+        AudioTranscriber().extract_discussion_insight(file_path)
         print("Insight extraction completed successfully!")
     except Exception as e:
         print(f"Error during insight extraction: {e}")

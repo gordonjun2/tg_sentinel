@@ -2,6 +2,7 @@ import logging
 import csv
 import json
 import random
+import sys
 from io import StringIO
 from telegram import (
     Update,
@@ -109,6 +110,15 @@ async def revoke_and_create_invite_link(bot, user_data: UserData) -> str:
 
 
 _pending_members = []
+_PENDING_MEMBERS_MAX = 500
+
+
+def _add_pending_member(user) -> None:
+    """Append a pending member, keeping the list bounded so it can never
+    grow without limit if the join command is not run for a while."""
+    _pending_members.append(user)
+    if len(_pending_members) > _PENDING_MEMBERS_MAX:
+        del _pending_members[: len(_pending_members) - _PENDING_MEMBERS_MAX]
 
 
 async def announce_new_member(
@@ -124,7 +134,8 @@ async def announce_new_member(
     if not members:
         return
 
-    _pending_members.extend(members)
+    for member in members:
+        _add_pending_member(member)
 
 
 async def handle_chat_member_update(
@@ -148,7 +159,7 @@ async def handle_chat_member_update(
     if user.id == context.bot.id:
         return
 
-    _pending_members.append(user)
+    _add_pending_member(user)
 
 
 PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")
@@ -1064,6 +1075,40 @@ async def check_transcription_status_command(
     await update.message.reply_text(status_msg)
 
 
+TRANSCRIBE_SCRIPT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "audio_transcribe.py"
+)
+
+
+async def _transcribe_in_subprocess(file_path: str, progress_callback=None) -> None:
+    """Run whisperx in a child process so all model/torch memory is returned
+    to the OS when it exits (prevents RSS creep in the long-lived bot)."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-u",
+        TRANSCRIBE_SCRIPT,
+        "--transcribe",
+        file_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    async for line in proc.stdout:
+        text = line.decode(errors="replace").strip()
+        if text.startswith("PROGRESS:") and progress_callback:
+            try:
+                _, done, total = text.split(":")
+                progress_callback(int(done), int(total))
+            except ValueError:
+                pass
+    stderr_output = await proc.stderr.read()
+    return_code = await proc.wait()
+    if return_code != 0:
+        raise RuntimeError(
+            "transcription subprocess failed with code "
+            f"{return_code}: {stderr_output.decode(errors='replace')[-500:]}"
+        )
+
+
 async def process_transcription(
     bot, chat_id, file_path: str, base_filename: str, processing_msg
 ) -> None:
@@ -1077,14 +1122,10 @@ async def process_transcription(
             percentage = (current / total) * 100
             db.update_transcription_progress(file_path, percentage)
 
-        # Process the file with progress tracking - run in executor to not block
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: transcriber.transcribe(
-                file_path, progress_callback=progress_callback
-            ),
-        )
+
+        # Transcribe in a subprocess — whisper/torch memory is freed on exit
+        await _transcribe_in_subprocess(file_path, progress_callback)
 
         # Mark transcription as complete but keep tracking for insights
         db.complete_transcription(file_path)
@@ -1210,6 +1251,25 @@ async def process_transcription(
         db.complete_insight_extraction(file_path)
 
 
+_downloader_client = None
+
+
+async def _get_downloader_client():
+    """Shared Pyrogram client for large downloads — created once and reused
+    instead of being rebuilt (leaking sockets/sessions) on every download."""
+    global _downloader_client
+    if _downloader_client is None:
+        _downloader_client = Client(
+            "audio_downloader_temp",
+            api_id=TELEGRAM_API_KEY,
+            api_hash=TELEGRAM_HASH,
+            bot_token=BOT_TOKEN,
+        )
+    if not _downloader_client.is_connected:
+        await _downloader_client.start()
+    return _downloader_client
+
+
 async def download_large_file(
     message_id: int, chat_id: int, file_path: str, progress_callback=None
 ) -> bool:
@@ -1223,46 +1283,42 @@ async def download_large_file(
         asyncio.set_event_loop(main_loop)
 
     try:
-        async with Client(
-            "audio_downloader_temp",
-            api_id=TELEGRAM_API_KEY,
-            api_hash=TELEGRAM_HASH,
-            bot_token=BOT_TOKEN,
-        ) as client:
-            # Get the message
-            message = await client.get_messages(chat_id=chat_id, message_ids=message_id)
-            if not message:
-                logger.error("Could not find message to download")
-                return False
+        client = await _get_downloader_client()
 
-            # Throttle variables
-            last_update_time = 0
-            min_interval = 5.0  # seconds between updates
+        # Get the message
+        message = await client.get_messages(chat_id=chat_id, message_ids=message_id)
+        if not message:
+            logger.error("Could not find message to download")
+            return False
 
-            # Progress callback wrapper (scheduled in main loop)
-            def progress(current, total):
-                nonlocal last_update_time
-                now = time.time()
+        # Throttle variables
+        last_update_time = 0
+        min_interval = 5.0  # seconds between updates
 
-                # Only update if min_interval has passed or download is finished
-                if progress_callback and (
-                    now - last_update_time >= min_interval or current == total
-                ):
-                    last_update_time = now
-                    future = asyncio.run_coroutine_threadsafe(
-                        progress_callback(current, total), main_loop
-                    )
-                    try:
-                        future.result(timeout=1)
-                    except Exception:
-                        pass
+        # Progress callback wrapper (scheduled in main loop)
+        def progress(current, total):
+            nonlocal last_update_time
+            now = time.time()
 
-            # Download the file
-            result = await client.download_media(
-                message=message, file_name=file_path, progress=progress
-            )
+            # Only update if min_interval has passed or download is finished
+            if progress_callback and (
+                now - last_update_time >= min_interval or current == total
+            ):
+                last_update_time = now
+                future = asyncio.run_coroutine_threadsafe(
+                    progress_callback(current, total), main_loop
+                )
+                try:
+                    future.result(timeout=1)
+                except Exception:
+                    pass
 
-            return bool(result)
+        # Download the file
+        result = await client.download_media(
+            message=message, file_name=file_path, progress=progress
+        )
+
+        return bool(result)
 
     except Exception as e:
         logger.error(f"Failed to download file using Pyrogram: {e}")
@@ -1545,6 +1601,22 @@ def reset_active_transcriptions():
         logger.error(f"Failed to reset active transcriptions: {str(e)}")
 
 
+async def _rss_monitor_loop() -> None:
+    """Log process RSS hourly so memory growth is visible in the log early."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            with open("/proc/self/status") as f:
+                rss_mb = next(
+                    int(line.split()[1]) // 1024
+                    for line in f
+                    if line.startswith("VmRSS:")
+                )
+            logger.info(f"[monitor] process RSS: {rss_mb} MB")
+        except Exception:
+            pass
+
+
 def main() -> None:
     """Start the bot."""
     # Reset any active transcriptions from previous runs
@@ -1610,6 +1682,7 @@ def main() -> None:
         )
 
         app.create_task(_batch_announce_loop(app.bot))
+        app.create_task(_rss_monitor_loop())
 
     # Add post init callback
     application.post_init = post_init

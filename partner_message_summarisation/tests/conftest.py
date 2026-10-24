@@ -27,3 +27,15 @@ _DUMMY_REQUIRED = {
 
 for _key, _value in _DUMMY_REQUIRED.items():
     os.environ.setdefault(_key, _value)
+
+import pytest
+
+from llm_chain import set_failure_listener
+
+
+@pytest.fixture(autouse=True)
+def _silence_llm_failure_alerts():
+    """Default listener delivers real Telegram admin alerts; tests opt out."""
+    set_failure_listener(lambda **kwargs: None)
+    yield
+    set_failure_listener(None)

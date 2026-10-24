@@ -31,6 +31,7 @@ from config import (
     OPENAI_ENRICHMENT_MODEL,
 )
 from database import db
+from llm_chain import LLMChainError, run_llm_chain
 
 logger = logging.getLogger(__name__)
 
@@ -572,71 +573,44 @@ class WorthinessResult(BaseModel):
     search_queries: list[str] = Field(default_factory=list)
 
 
-def _classify_worthiness_openai(context_text: str) -> WorthinessResult:
-    client = _create_openai_instructor()
-    result = client.chat.completions.create(
-        response_model=WorthinessResult,
-        messages=[
-            {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
-            {"role": "user", "content": context_text},
-        ],
-        max_retries=2,
-    )
-    return result
-
-
-def _generate_enrichment_reply_openai(
-    context_text: str, retrieved_context: str
-) -> Optional[str]:
-    prompt = f"""<conversation>
-{context_text}
-</conversation>
-
-<retrieved_context>
-{retrieved_context}
-</retrieved_context>
-
-Based on the conversation and the retrieved context, write a concise enrichment reply. If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
-
-    response = openai_client.responses.create(
-        model=OPENAI_ENRICHMENT_MODEL,
-        instructions=ENRICHMENT_REPLY_SYSTEM_PROMPT,
-        input=prompt,
-    )
-    reply = response.output_text.strip()
-    if reply == "NO_REPLY" or not reply:
-        return None
-    return reply
-
-
 def classify_worthiness(context_text: str) -> dict:
-    try:
+    def _via_gemini() -> WorthinessResult:
         client = _create_gemini_instructor()
-        if client:
-            result = client.chat.completions.create(
-                response_model=WorthinessResult,
-                messages=[
-                    {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
-                    {"role": "user", "content": context_text},
-                ],
-                max_retries=2,
-            )
-            logger.info("[Enrichment] classify_worthiness succeeded via Gemini (instructor)")
-            return result.model_dump()
-    except Exception as e:
-        logger.warning(f"[Enrichment] Gemini classify_worthiness failed: {e}")
+        if client is None:
+            raise RuntimeError("Gemini client not configured")
+        return client.chat.completions.create(
+            response_model=WorthinessResult,
+            messages=[
+                {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
+                {"role": "user", "content": context_text},
+            ],
+            max_retries=2,
+        )
 
-    if openai_client:
-        try:
-            result = _classify_worthiness_openai(context_text)
-            logger.info(
-                "[Enrichment] classify_worthiness succeeded via OpenAI (fallback)"
-            )
-            return result.model_dump()
-        except Exception as e:
-            logger.error(
-                f"[Enrichment] OpenAI classify_worthiness fallback also failed: {e}"
-            )
+    def _via_openai() -> WorthinessResult:
+        client = _create_openai_instructor()
+        if client is None:
+            raise RuntimeError("OpenAI client not configured")
+        return client.chat.completions.create(
+            response_model=WorthinessResult,
+            messages=[
+                {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
+                {"role": "user", "content": context_text},
+            ],
+            max_retries=2,
+        )
+
+    try:
+        outcome = run_llm_chain(
+            "classify_worthiness",
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
+                ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
+            ],
+        )
+        return outcome.result.model_dump()
+    except LLMChainError as e:
+        logger.error(f"[Enrichment] classify_worthiness failed on all providers: {e}")
 
     return {
         "should_reply": False,
@@ -660,7 +634,7 @@ def generate_enrichment_reply(
 
 Based on the conversation and the retrieved context, write a concise enrichment reply. If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
 
-    try:
+    def _via_gemini() -> str:
         response = gemini_client.models.generate_content(
             model=GEMINI_ENRICHMENT_MODEL,
             config=types.GenerateContentConfig(
@@ -671,26 +645,34 @@ Based on the conversation and the retrieved context, write a concise enrichment 
         )
         reply = response.text.strip()
         if reply == "NO_REPLY" or not reply:
-            return None
-        logger.info("[Enrichment] generate_enrichment_reply succeeded via Gemini")
+            return ""
         return reply
-    except Exception as e:
-        logger.warning(f"[Enrichment] Gemini generate_enrichment_reply failed: {e}")
 
-    if openai_client:
-        try:
-            result = _generate_enrichment_reply_openai(context_text, retrieved_context)
-            if result:
-                logger.info(
-                    "[Enrichment] generate_enrichment_reply succeeded via OpenAI (fallback)"
-                )
-            return result
-        except Exception as e:
-            logger.error(
-                f"[Enrichment] OpenAI generate_enrichment_reply fallback also failed: {e}"
-            )
+    def _via_openai() -> str:
+        if openai_client is None:
+            raise RuntimeError("OpenAI client not configured")
+        response = openai_client.responses.create(
+            model=OPENAI_ENRICHMENT_MODEL,
+            instructions=ENRICHMENT_REPLY_SYSTEM_PROMPT,
+            input=prompt,
+        )
+        reply = response.output_text.strip()
+        if reply == "NO_REPLY" or not reply:
+            return ""
+        return reply
 
-    return None
+    try:
+        outcome = run_llm_chain(
+            "generate_enrichment_reply",
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
+                ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
+            ],
+        )
+        return outcome.result or None
+    except LLMChainError as e:
+        logger.error(f"[Enrichment] generate_enrichment_reply failed on all providers: {e}")
+        return None
 
 
 _MD_V2_SPECIAL = set("_*[]()~`>#+-=|{}.!\\")
@@ -799,53 +781,51 @@ def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
     return False
 
 
-def _score_url_content_openai(url: str, content: str) -> URLScore:
-    prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
-    client = _create_openai_instructor()
-    result = client.chat.completions.create(
-        response_model=URLScore,
-        messages=[
-            {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        max_retries=2,
-    )
-    return result
-
-
 def score_url_content(url: str, content: str) -> URLScore:
     prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
-    try:
+
+    def _via_gemini() -> URLScore:
         client = _create_gemini_instructor()
-        if client:
-            result = client.chat.completions.create(
-                response_model=URLScore,
-                messages=[
-                    {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                max_retries=2,
-            )
-            logger.info(
-                f"[Enrichment] score_url_content succeeded via Gemini (instructor): score={result.score:.2f} ({result.reason})"
-            )
-            return result
-    except Exception as e:
-        logger.warning(f"[Enrichment] Gemini score_url_content failed: {e}")
+        if client is None:
+            raise RuntimeError("Gemini client not configured")
+        return client.chat.completions.create(
+            response_model=URLScore,
+            messages=[
+                {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            max_retries=2,
+        )
 
-    if openai_client:
-        try:
-            result = _score_url_content_openai(url, content)
-            logger.info(
-                f"[Enrichment] score_url_content succeeded via OpenAI (fallback): score={result.score:.2f}"
-            )
-            return result
-        except Exception as e:
-            logger.error(
-                f"[Enrichment] OpenAI score_url_content fallback also failed: {e}"
-            )
+    def _via_openai() -> URLScore:
+        client = _create_openai_instructor()
+        if client is None:
+            raise RuntimeError("OpenAI client not configured")
+        return client.chat.completions.create(
+            response_model=URLScore,
+            messages=[
+                {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            max_retries=2,
+        )
 
-    return URLScore(score=0.0, reason="scoring_error", topic="", search_queries=[])
+    try:
+        outcome = run_llm_chain(
+            "score_url_content",
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
+                ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
+            ],
+        )
+        logger.info(
+            f"[Enrichment] score_url_content via {outcome.provider}: "
+            f"score={outcome.result.score:.2f} ({outcome.result.reason})"
+        )
+        return outcome.result
+    except LLMChainError as e:
+        logger.error(f"[Enrichment] score_url_content failed on all providers: {e}")
+        return URLScore(score=0.0, reason="scoring_error", topic="", search_queries=[])
 
 
 class PollEvaluation(BaseModel):
@@ -922,14 +902,30 @@ Output: {"should_create_poll": false, "confidence_score": 0.15, "question": null
 Reason: Product release is factual information. Unless there's a specific controversial feature being debated, this doesn't warrant a poll."""
 
 
+_gemini_instructor = None
+_openai_instructor = None
+
+
 def _create_gemini_instructor():
-    return instructor.from_genai(gemini_client, model=GEMINI_ENRICHMENT_MODEL)
+    # Cached singleton: rebuilding the instructor wrapper on every call
+    # churns memory in the long-lived bot process.
+    global _gemini_instructor
+    if _gemini_instructor is None:
+        _gemini_instructor = instructor.from_genai(
+            gemini_client, model=GEMINI_ENRICHMENT_MODEL
+        )
+    return _gemini_instructor
 
 
 def _create_openai_instructor():
+    global _openai_instructor
     if not openai_client:
         return None
-    return instructor.from_openai(openai_client, model=OPENAI_ENRICHMENT_MODEL)
+    if _openai_instructor is None:
+        _openai_instructor = instructor.from_openai(
+            openai_client, model=OPENAI_ENRICHMENT_MODEL
+        )
+    return _openai_instructor
 
 
 def evaluate_poll_opportunity(
@@ -947,43 +943,44 @@ def evaluate_poll_opportunity(
 
 Based on the conversation and context above, would this topic make for a fun, engaging poll?"""
 
-    try:
+    def _via_gemini() -> PollEvaluation:
         client = _create_gemini_instructor()
-        if client:
-            result = client.chat.completions.create(
-                response_model=PollEvaluation,
-                messages=[
-                    {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
-                max_retries=2,
-            )
-            logger.info(
-                "[Enrichment] evaluate_poll_opportunity succeeded via Gemini (instructor)"
-            )
-            return result
-    except Exception as e:
-        logger.warning(f"[Enrichment] Gemini poll evaluation failed: {e}")
+        if client is None:
+            raise RuntimeError("Gemini client not configured")
+        return client.chat.completions.create(
+            response_model=PollEvaluation,
+            messages=[
+                {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            max_retries=2,
+        )
+
+    def _via_openai() -> PollEvaluation:
+        client = _create_openai_instructor()
+        if client is None:
+            raise RuntimeError("OpenAI client not configured")
+        return client.chat.completions.create(
+            response_model=PollEvaluation,
+            messages=[
+                {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            max_retries=2,
+        )
 
     try:
-        client = _create_openai_instructor()
-        if client:
-            result = client.chat.completions.create(
-                response_model=PollEvaluation,
-                messages=[
-                    {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
-                max_retries=2,
-            )
-            logger.info(
-                "[Enrichment] evaluate_poll_opportunity succeeded via OpenAI (instructor fallback)"
-            )
-            return result
-    except Exception as e:
-        logger.error(f"[Enrichment] OpenAI poll evaluation fallback also failed: {e}")
-
-    return None
+        outcome = run_llm_chain(
+            "evaluate_poll_opportunity",
+            [
+                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
+                ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
+            ],
+        )
+        return outcome.result
+    except LLMChainError as e:
+        logger.error(f"[Enrichment] evaluate_poll_opportunity failed on all providers: {e}")
+        return None
 
 
 async def send_discussion_poll(

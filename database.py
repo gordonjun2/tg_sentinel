@@ -142,6 +142,8 @@ class Database:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         last_processed_message_id INTEGER,
                         is_enabled BOOLEAN DEFAULT 1,
+                        is_enabled_admin BOOLEAN DEFAULT 1,
+                        is_context_window_enabled BOOLEAN DEFAULT 0,
                         updated_at TEXT
                     )
                 """)

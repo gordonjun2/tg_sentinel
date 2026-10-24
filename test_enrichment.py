@@ -7,6 +7,7 @@ import pytest
 
 from ai_enrichment import (
     MessageBuffer,
+    WorthinessResult,
     classify_worthiness,
     compute_content_hash,
     extract_urls,
@@ -14,6 +15,16 @@ from ai_enrichment import (
     is_semantically_duplicate,
     serialize_messages,
 )
+from llm_chain import reset_provider_health, set_failure_listener
+
+
+@pytest.fixture(autouse=True)
+def _reset_llm_chain_health():
+    reset_provider_health()
+    set_failure_listener(lambda **kwargs: None)
+    yield
+    set_failure_listener(None)
+    reset_provider_health()
 
 
 def test_compute_content_hash_deterministic():
@@ -119,32 +130,69 @@ def test_is_semantically_duplicate_empty():
     assert is_semantically_duplicate("", [("topic", "h", "d")]) is False
 
 
-@patch("ai_enrichment.gemini_client")
-def test_classify_worthiness_worthy(mock_client):
-    mock_response = MagicMock()
-    mock_response.text = '{"should_reply": true, "confidence": 0.9, "reason": "technical_discussion", "topic": "AI chips", "search_queries": ["AI chip demand"]}'
-    mock_client.models.generate_content.return_value = mock_response
+def _mock_instructor(result=None, exc=None):
+    client = MagicMock()
+    if exc is not None:
+        client.chat.completions.create.side_effect = exc
+    else:
+        client.chat.completions.create.return_value = result
+    return client
+
+
+def _worthy_result():
+    return WorthinessResult(
+        should_reply=True,
+        confidence=0.9,
+        reason="technical_discussion",
+        topic="AI chips",
+        search_queries=["AI chip demand"],
+    )
+
+
+@patch("ai_enrichment.openai_client", None)
+@patch("ai_enrichment._create_gemini_instructor")
+def test_classify_worthiness_worthy(mock_factory):
+    mock_factory.return_value = _mock_instructor(result=_worthy_result())
 
     result = classify_worthiness("User: TSMC revenue is up")
     assert result["should_reply"] is True
     assert result["confidence"] > 0.5
 
 
-@patch("ai_enrichment.gemini_client")
-def test_classify_worthiness_not_worthy(mock_client):
-    mock_response = MagicMock()
-    mock_response.text = '{"should_reply": false, "confidence": 0.2, "reason": "not_worthy", "topic": "", "search_queries": []}'
-    mock_client.models.generate_content.return_value = mock_response
+@patch("ai_enrichment.openai_client", None)
+@patch("ai_enrichment._create_gemini_instructor")
+def test_classify_worthiness_gemini_failure_falls_back(mock_factory):
+    mock_factory.return_value = _mock_instructor(exc=RuntimeError("gemini down"))
+    mock_openai = _mock_instructor(result=_worthy_result())
+
+    with patch("ai_enrichment._create_openai_instructor", return_value=mock_openai), \
+            patch("ai_enrichment.openai_client", MagicMock()):
+        result = classify_worthiness("User: TSMC revenue is up")
+
+    assert result["should_reply"] is True
+    assert result["confidence"] > 0.5
+
+
+@patch("ai_enrichment.openai_client", None)
+@patch("ai_enrichment._create_gemini_instructor")
+def test_classify_worthiness_not_worthy(mock_factory):
+    result = WorthinessResult(
+        should_reply=False,
+        confidence=0.2,
+        reason="not_worthy",
+        topic="",
+        search_queries=[],
+    )
+    mock_factory.return_value = _mock_instructor(result=result)
 
     result = classify_worthiness("User: haha nice one")
     assert result["should_reply"] is False
 
 
-@patch("ai_enrichment.gemini_client")
-def test_classify_worthiness_malformed_response(mock_client):
-    mock_response = MagicMock()
-    mock_response.text = "not json at all"
-    mock_client.models.generate_content.return_value = mock_response
+@patch("ai_enrichment.openai_client", None)
+@patch("ai_enrichment._create_gemini_instructor")
+def test_classify_worthiness_malformed_response(mock_factory):
+    mock_factory.return_value = _mock_instructor(exc=ValueError("not json at all"))
 
     result = classify_worthiness("anything")
     assert result["should_reply"] is False
