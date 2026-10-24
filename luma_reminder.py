@@ -22,9 +22,13 @@ from config import (
     OPENAI_API_KEY,
     OPENAI_ENRICHMENT_MODEL,
     TARGET_GROUP_ID,
+    TARGET_SUB_GROUP_ID,
     TELEGRAM_API_KEY,
     TELEGRAM_HASH,
 )
+
+# Groups that receive the Luma reminder (source pinned-event scan stays on main)
+REMINDER_GROUP_IDS = (TARGET_GROUP_ID, TARGET_SUB_GROUP_ID)
 from llm_chain import LLMChainError, run_llm_chain
 from luma_scraper import SGT, get_event_details
 
@@ -245,12 +249,14 @@ async def main() -> None:
             return
 
         final_text = f"{reminder_text}\n\n{luma_url}"
-        await client.send_message(
-            chat_id=TARGET_GROUP_ID,
-            text=final_text,
-            reply_to_message_id=source_msg_id,
-        )
-        logger.info("Reminder sent successfully.")
+        for group_id in REMINDER_GROUP_IDS:
+            await client.send_message(
+                chat_id=group_id,
+                text=final_text,
+                # reply in-thread only in the group where the event is pinned
+                reply_to_message_id=source_msg_id if group_id == TARGET_GROUP_ID else None,
+            )
+        logger.info("Reminder sent to %d group(s).", len(REMINDER_GROUP_IDS))
 
 
 if __name__ == "__main__":

@@ -113,22 +113,25 @@ async def revoke_and_create_invite_link(
         raise e
 
 
-_pending_members = []
+TARGET_GROUP_IDS = (TARGET_GROUP_ID, TARGET_SUB_GROUP_ID)
+
+_pending_members: dict = {}
 _PENDING_MEMBERS_MAX = 500
 
 
-def _add_pending_member(user) -> None:
-    """Append a pending member, keeping the list bounded so it can never
-    grow without limit if the join command is not run for a while."""
-    _pending_members.append(user)
-    if len(_pending_members) > _PENDING_MEMBERS_MAX:
-        del _pending_members[: len(_pending_members) - _PENDING_MEMBERS_MAX]
+def _add_pending_member(user, chat_id: int) -> None:
+    """Append a pending member for a group, keeping each list bounded so it
+    can never grow without limit if the join command is not run for a while."""
+    bucket = _pending_members.setdefault(chat_id, [])
+    bucket.append(user)
+    if len(bucket) > _PENDING_MEMBERS_MAX:
+        del bucket[: len(bucket) - _PENDING_MEMBERS_MAX]
 
 
 async def announce_new_member(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    if update.effective_chat.id != TARGET_GROUP_ID:
+    if update.effective_chat.id not in TARGET_GROUP_IDS:
         return
     if not update.message or not update.message.new_chat_members:
         return
@@ -139,13 +142,13 @@ async def announce_new_member(
         return
 
     for member in members:
-        _add_pending_member(member)
+        _add_pending_member(member, update.effective_chat.id)
 
 
 async def handle_chat_member_update(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    if update.effective_chat.id != TARGET_GROUP_ID:
+    if update.effective_chat.id not in TARGET_GROUP_IDS:
         return
     if not update.chat_member:
         return
@@ -163,7 +166,7 @@ async def handle_chat_member_update(
     if user.id == context.bot.id:
         return
 
-    _add_pending_member(user)
+    _add_pending_member(user, update.effective_chat.id)
 
 
 PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")
@@ -198,6 +201,41 @@ async def handle_pinned_message(update: Update, context: ContextTypes.DEFAULT_TY
     logger.info(f"Tracked pinned message: {pinned_id}")
 
 
+def _build_welcome_names(members: list) -> str:
+    seen = set()
+    mentions = []
+    for u in members:
+        key = u.username or u.id
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if u.username:
+            escaped = (
+                u.username.replace("_", "\\_")
+                .replace("*", "\\*")
+                .replace("[", "\\[")
+                .replace("`", "\\`")
+            )
+            mentions.append(f"@{escaped}")
+        else:
+            escaped = (
+                u.full_name.replace("_", "\\_")
+                .replace("*", "\\*")
+                .replace("[", "\\[")
+                .replace("`", "\\`")
+            )
+            mentions.append(f"[{escaped}](tg://user?id={u.id})")
+
+    if not mentions:
+        return ""
+    if len(mentions) == 1:
+        return mentions[0]
+    if len(mentions) == 2:
+        return f"{mentions[0]} and {mentions[1]}"
+    return ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
+
+
 async def _batch_announce_loop(bot) -> None:
     interval = WELCOME_BATCH_INTERVAL_MINUTES
     try:
@@ -211,48 +249,22 @@ async def _batch_announce_loop(bot) -> None:
             if not _pending_members:
                 continue
 
-            members = _pending_members[:]
-            _pending_members.clear()
-
-            seen = set()
-            mentions = []
-            for u in members:
-                key = u.username or u.id
-                if key in seen:
+            for chat_id, members in list(_pending_members.items()):
+                if not members:
                     continue
-                seen.add(key)
+                _pending_members[chat_id] = []
 
-                if u.username:
-                    escaped = (
-                        u.username.replace("_", "\\_")
-                        .replace("*", "\\*")
-                        .replace("[", "\\[")
-                        .replace("`", "\\`")
+                names = _build_welcome_names(members)
+                if not names:
+                    continue
+
+                text = random.choice(WELCOME_MESSAGES).format(names=names)
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN
                     )
-                    mentions.append(f"@{escaped}")
-                else:
-                    escaped = (
-                        u.full_name.replace("_", "\\_")
-                        .replace("*", "\\*")
-                        .replace("[", "\\[")
-                        .replace("`", "\\`")
-                    )
-                    mentions.append(f"[{escaped}](tg://user?id={u.id})")
-
-            if len(mentions) == 1:
-                names = mentions[0]
-            elif len(mentions) == 2:
-                names = f"{mentions[0]} and {mentions[1]}"
-            else:
-                names = ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
-
-            text = random.choice(WELCOME_MESSAGES).format(names=names)
-            try:
-                await bot.send_message(
-                    chat_id=TARGET_GROUP_ID, text=text, parse_mode=ParseMode.MARKDOWN
-                )
-            except Exception as e:
-                logger.error(f"Failed to send batch announcement: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to send batch announcement to {chat_id}: {e}")
     except asyncio.CancelledError:
         pass
 
