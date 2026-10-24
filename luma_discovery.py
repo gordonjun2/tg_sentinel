@@ -30,7 +30,6 @@ import random
 import re
 import sys
 import time
-import unicodedata
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -222,14 +221,12 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 LEVEL_LABELS = {
-    "explicit": "Explicit (free food stated)",
-    "meal": "Meal (hosted meal provided)",
-    "bites/canapés": "Bites/Canapes (provided)",
-    "light": "Light (coffee/pastries)",
-    "none": "none stated",
+    "explicit": "✅ Free food stated",
+    "meal": "🍽️ Meal provided",
+    "bites/canapés": "🥟 Bites/canapés",
+    "light": "☕ Light (coffee/pastries)",
+    "none": "— none stated",
 }
-
-_CATEGORY_ASCII = {"tech": "Tech", "ai": "AI", "crypto": "Crypto"}
 
 # registration_availability enum (from luma.com's own UI labels)
 REGISTRATION_LABELS = {
@@ -245,42 +242,6 @@ def registration_label(entry: dict) -> str:
     if ra == "open" and entry.get("near_capacity"):
         return "Open (near capacity)"
     return REGISTRATION_LABELS.get(ra, "NA")
-
-_ASCII_FOLDS = {
-    "\u2018": "'",
-    "\u2019": "'",
-    "\u201c": '"',
-    "\u201d": '"',
-    "\u2013": "-",
-    "\u2014": "-",
-    "\u2212": "-",
-    "\u00b7": "-",
-    "\u2026": "...",
-    "\u00a0": " ",
-    "\u200b": "",
-}
-
-
-def _ascii(s: str) -> str:
-    """Fold unicode punctuation and accented letters to ASCII.
-
-    Everything rendered inside the <pre> table must be ASCII so the
-    box-drawing grid aligns in every Telegram monospace font (emoji
-    and wide unicode glyphs have unpredictable cell widths).
-    """
-    if not s:
-        return ""
-    decomposed = unicodedata.normalize("NFKD", s)
-    out = []
-    for ch in decomposed:
-        if ch in _ASCII_FOLDS:
-            out.append(_ASCII_FOLDS[ch])
-        elif ord(ch) < 128:
-            out.append(ch)
-        elif unicodedata.combining(ch):
-            continue
-        # anything else (emoji etc.) is dropped
-    return "".join(out)
 
 CATEGORY_LABELS = {"tech": "Tech", "ai": "AI", "crypto": "Crypto"}
 
@@ -300,10 +261,13 @@ You are given an event name and its Luma description. Return:
   - "explicit": the description explicitly states food or drinks are
     free/provided/included/on us/complimentary ("free food", "F&B
     provided", "drinks on us", "complimentary dinner", "catered
-    lunch included")
+    lunch included", "free buffet")
   - "meal": a hosted meal the organisers clearly provide — private
-    dinner, catered lunch for guests, buffet for registered guests,
-    "brunch is served" — even if the word "free" is not used
+    dinner, catered lunch for guests, "brunch is served", or any
+    buffet or food spread laid on for attendees ("buffet dinner",
+    "buffet provided", "buffet-style lunch", "dinner buffet for
+    registered guests", "food stations for attendees") — even if the
+    word "free" is not used
   - "bites/canapés": canapés, light bites, finger food or afternoon
     tea are served/provided to attendees
   - "light": coffee, pastries or dessert are provided ("coffee and
@@ -311,8 +275,9 @@ You are given an event name and its Luma description. Return:
   - "none": NO free food provided. This includes: schedule lines like
     "lunch break" or "dinner break" (attendees fend for themselves),
     food/drinks available for purchase ("cash bar", "menu available",
-    "grab a coffee at the cafe"), vague mentions without a provider
-    ("networking over dinner" at a venue), or no food mention at all.
+    "buffet available for purchase", "grab a coffee at the cafe"),
+    vague mentions without a provider ("networking over dinner" at a
+    venue), or no food mention at all.
   When in doubt, choose "none".
 - food_evidence: 0-3 VERBATIM quotes from the description (each under
   200 characters) that prove food is provided. Empty list if level is
@@ -560,131 +525,195 @@ def write_markdown(catalog: list, last_scan: Optional[str], scanned_count: int) 
 
 
 # ---------------------------------------------------------------------------
-# Telegram digest
+# Telegram digest (rich messages)
 # ---------------------------------------------------------------------------
 
-TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
-TG_MAX_CHARS = 4000  # leave headroom under the 4096 hard limit
+TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/{method}"
+TG_MAX_CHARS = 4000  # legacy sendMessage hard limit is 4096
+RICH_MAX_CHARS = 28000  # rich messages allow up to 32768 UTF-8 chars
+RICH_MAX_BLOCKS = 460  # rich messages allow up to 500 blocks
+
+# When true, the digest is written to a .md file and sent as a document
+# (bot sends the top summary message + the file). When false, the full
+# digest is rendered inline as rich Telegram message(s).
+DIGEST_AS_MD_FILE = os.getenv("LUMA_DISCOVERY_MD_DIGEST", "1") != "0"
 
 
-def _display_width(s: str) -> int:
-    """Rendered width in a monospace cell grid (emoji count as 2)."""
-    w = 0
-    for ch in s:
-        cp = ord(ch)
-        if ch in ("\u200d", "\ufe0f") or unicodedata.combining(ch):
-            continue
-        if (
-            unicodedata.east_asian_width(ch) in ("W", "F")
-            or 0x1F000 <= cp <= 0x1FAFF
-            or 0x2190 <= cp <= 0x2BFF
-        ):
-            w += 2
-        else:
-            w += 1
-    return w
-
-
-def _wrap_width(s: str, width: int) -> List[str]:
-    lines: List[str] = []
-    for hard_line in s.split("\n"):
-        cur = ""
-        for word in hard_line.split():
-            candidate = word if not cur else cur + " " + word
-            if _display_width(candidate) <= width or not cur:
-                cur = candidate
-            else:
-                lines.append(cur)
-                cur = word
-        lines.append(cur)
-    return lines or [""]
-
-
-def _event_table(entry: dict) -> str:
-    """Box-drawing key/value table for one event (sent inside <pre>).
-
-    All cell content is sanitized to ASCII so the grid aligns in every
-    Telegram monospace font.
-    """
+def _event_rows(entry: dict) -> List[tuple]:
+    """(emoji, label, value) rows for one event."""
     start_dt = datetime.fromisoformat(entry["start_iso"]).astimezone(SGT)
-    rows = [
-        ("Category", _CATEGORY_ASCII.get(entry["category"], entry["category"])),
-        ("When", start_dt.strftime("%a %d %b %Y, %H:%M SGT")),
-    ]
+    rows = [("📅", "Date", start_dt.strftime("%a %d %b %Y, %H:%M SGT"))]
     if entry.get("venue"):
-        rows.append(("Where", entry["venue"]))
+        rows.append(("📍", "Location", " ".join(entry["venue"].split())))
     if entry.get("context"):
-        rows.append(("What", entry["context"]))
+        rows.append(("💡", "About", entry["context"]))
     if entry.get("show_guest_list"):
-        rows.append(("Guests", f"{entry.get('guest_count', 0)} registered"))
-    else:
-        rows.append(("Guests", "NA (hidden by host)"))
-    rows.append(("Status", registration_label(entry)))
-    rows.append(("Food", LEVEL_LABELS[entry["level"]]))
-    if entry.get("food_evidence"):
         rows.append(
-            ("Proof", " / ".join(f'"{q}"' for q in entry["food_evidence"][:2]))
+            ("👥", "Guests", f"{entry.get('guest_count', 0)} currently registered")
         )
-
-    # sanitize to ASCII + collapse whitespace so wrapping/width are exact
-    rows = [
-        (_ascii(label), " ".join(_ascii(value).split()))
-        for label, value in rows
-    ]
-
-    value_w = 46
-    label_w = max(_display_width(label) for label, _ in rows)
-    wrapped = [
-        (label, _wrap_width(value, value_w)) for label, value in rows
-    ]
-    top = "┌" + "─" * (label_w + 2) + "┬" + "─" * (value_w + 2) + "┐"
-    sep = "├" + "─" * (label_w + 2) + "┼" + "─" * (value_w + 2) + "┤"
-    bottom = "└" + "─" * (label_w + 2) + "┴" + "─" * (value_w + 2) + "┘"
-    lines = [top]
-    for i, (label, chunks) in enumerate(wrapped):
-        if i > 0:
-            lines.append(sep)
-        for j, chunk in enumerate(chunks):
-            lab = label if j == 0 else ""
-            pad_l = " " * (label_w - _display_width(lab))
-            pad_v = " " * (value_w - _display_width(chunk))
-            lines.append(f"│ {lab}{pad_l} │ {chunk}{pad_v} │")
-    lines.append(bottom)
-    return "\n".join(lines)
+    else:
+        rows.append(("👥", "Guests", "Guest list hidden by host"))
+    rows.append(("🎫", "Status", registration_label(entry)))
+    return rows
 
 
-def _format_event_block(index: int, entry: dict) -> str:
-    table = _event_table(entry)
+def _event_details(entry: dict) -> List[str]:
+    return [f"{e} {v}" for e, _, v in _event_rows(entry)]
+
+
+def _event_blocks(index: int, entry: dict) -> tuple:
+    """(rich_html, legacy_html) blocks for one event.
+
+    No tables — a vertical layout (heading + food quote + list)
+    renders far better on phones than a wide grid.
+    """
     url = f"https://luma.com/{entry['url'].rstrip('/').split('/')[-1]}"
-    # Links are not clickable inside <pre>, so the event title carries
-    # the hyperlink instead (index stays outside the link).
-    return (
+    title = (
         f"{index} · "
         f'<a href="{html.escape(url, quote=True)}">'
-        f"<b>{html.escape(entry['name'])}</b></a>\n"
-        f"<pre>{html.escape(table)}</pre>"
+        f"{html.escape(entry['name'])}</a>"
     )
+    food = html.escape(LEVEL_LABELS.get(entry["level"], entry["level"]))
+    evidence = " / ".join(
+        f"“{' '.join(html.escape(q).split())}”"
+        for q in entry.get("food_evidence", [])[:2]
+    )
+    details = [html.escape(d) for d in _event_details(entry)]
+
+    rich = (
+        f"<h3>{title}</h3>"
+        f"<blockquote><b>{food}</b>"
+        + (f"<br>{evidence}" if evidence else "")
+        + "</blockquote><ul>"
+        + "".join(f"<li>{d}</li>" for d in details)
+        + "</ul>"
+    )
+    legacy = (
+        f"{title}\n<blockquote><b>{food}</b>"
+        + (f"\n{evidence}" if evidence else "")
+        + "</blockquote>\n"
+        + "\n".join(details)
+    )
+    return rich, legacy
+
+
+def _digest_header(count: int, period_label: str, cont: bool = False) -> tuple:
+    esc = html.escape(period_label)
+    if cont:
+        return "<h2>🍜 Luma SG with food (cont.)</h2>", "🍜 Luma SG with food (cont.)"
+    plural = "event" if count == 1 else "events"
+    return (
+        f"<h2>🍜 Luma SG — {count} new {plural} with food</h2>"
+        f"<p><i>🕒 Scanned: {esc}</i></p>",
+        f"🍜 <b>Luma SG — {count} new {plural} with food</b>\n"
+        f"<i>🕒 Scanned: {esc}</i>",
+    )
+
+
+def _rich_block_count(s: str) -> int:
+    return len(re.findall(r"<(?:h2|h3|p|blockquote|ul|li)\b", s))
 
 
 def build_digest(new_entries: list, period_label: str) -> list:
-    plural = "event" if len(new_entries) == 1 else "events"
-    header = (
-        f"🍜 <b>Luma SG — {len(new_entries)} new {plural} with food</b>\n"
-        f"<i>🕒 Scanned: {html.escape(period_label)}</i>\n\n"
-    )
+    """Chunk events into (rich_html, legacy_html) message pairs.
+
+    The rich variant uses Telegram rich message formatting (headings,
+    blockquotes, lists) via sendRichMessage. The legacy variant keeps
+    the same content in sendMessage-compatible HTML and is only used
+    as a fallback if rich messages are rejected.
+    """
+    pairs = [_event_blocks(i, e) for i, e in enumerate(new_entries, 1)]
     messages = []
-    current = header
-    for idx, entry in enumerate(new_entries, 1):
-        block = _format_event_block(idx, entry)
-        if len(current) + len(block) + 2 > TG_MAX_CHARS:
-            messages.append(current.rstrip() + "\n")
-            current = "🍜 Luma SG with food (cont.)\n\n"
-        current += block + "\n\n"
-    messages.append(current.rstrip() + "\n")
+    current = _digest_header(len(new_entries), period_label)
+    continuation = _digest_header(0, period_label, cont=True)
+    for rich, legacy in pairs:
+        next_rich = current[0] + "\n" + rich
+        next_legacy = current[1] + "\n\n" + legacy
+        if (
+            len(next_rich) > RICH_MAX_CHARS
+            or _rich_block_count(next_rich) > RICH_MAX_BLOCKS
+            or len(next_legacy) > TG_MAX_CHARS
+        ):
+            messages.append(current)
+            current = continuation
+            next_rich = current[0] + "\n" + rich
+            next_legacy = current[1] + "\n\n" + legacy
+        current = (next_rich, next_legacy)
+    messages.append(current)
     return messages
 
 
+# ---------------------------------------------------------------------------
+# Markdown file digest
+# ---------------------------------------------------------------------------
+
+
+def _md_escape_link(text: str) -> str:
+    return text.replace("[", "(").replace("]", ")")
+
+
+def _event_md(index: int, entry: dict) -> str:
+    """Markdown block for one event, mirroring the rich digest layout."""
+    url = f"https://luma.com/{entry['url'].rstrip('/').split('/')[-1]}"
+
+    def cell(text: str) -> str:
+        return " ".join(text.replace("|", "\\|").split())
+
+    lines = [f"## {index} · {_md_escape_link(entry['name'])}", ""]
+    food = LEVEL_LABELS.get(entry["level"], entry["level"])
+    evidence = entry.get("food_evidence", [])[:2]
+    lines.append(f"> **{food}**")
+    for q in evidence:
+        lines.append(f"> “{q}”")
+    lines.append("")
+    lines.append("| | |")
+    lines.append("|---|---|")
+    for emoji, label, value in _event_rows(entry):
+        lines.append(f"| {emoji} {label} | {cell(value)} |")
+    lines.append(f"| 🔗 Link | [{url}]({url}) |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_digest_markdown(new_entries: list, period_label: str) -> str:
+    plural = "event" if len(new_entries) == 1 else "events"
+    lines = [
+        f"# 🍜 Luma SG — {len(new_entries)} new {plural} with food",
+        "",
+        f"*🕒 Scanned: {period_label}*",
+        "",
+    ]
+    for idx, entry in enumerate(new_entries, 1):
+        lines.append(_event_md(idx, entry))
+    lines.append("---")
+    lines.append(
+        "*Only events with food stated in their Luma description are "
+        "included — check each link for RSVP details.*"
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_digest_markdown(new_entries: list, period_label: str) -> str:
+    """Write the digest .md file to tmp/ and return its path."""
+    stamp = datetime.now(SGT).strftime("%Y%m%d-%H%M")
+    path = os.path.join(_PROJECT_ROOT, "tmp", f"luma_events_with_food_{stamp}.md")
+    content = build_digest_markdown(new_entries, period_label)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(content)
+    os.replace(tmp, path)
+    logger.info(f"Digest markdown written: {path}")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Telegram sending
+# ---------------------------------------------------------------------------
+
+
 def send_telegram(messages: list) -> bool:
+    """Legacy sendMessage with HTML parse mode (heartbeat + fallback)."""
     if not BOT_TOKEN or not TARGET_GROUP_ID:
         logger.warning("Telegram skipped (BOT_TOKEN/TARGET_GROUP_ID missing)")
         return False
@@ -692,7 +721,7 @@ def send_telegram(messages: list) -> bool:
     for msg in messages:
         try:
             resp = requests.post(
-                TELEGRAM_API_URL.format(token=BOT_TOKEN),
+                TELEGRAM_API_URL.format(token=BOT_TOKEN, method="sendMessage"),
                 json={
                     "chat_id": TARGET_GROUP_ID,
                     "text": msg,
@@ -714,6 +743,77 @@ def send_telegram(messages: list) -> bool:
             logger.warning(f"Telegram send failed: {exc}")
         time.sleep(1.5)
     return ok
+
+
+def send_telegram_digest(digest: list) -> bool:
+    """Send (rich_html, legacy_html) pairs via sendRichMessage.
+
+    Falls back to legacy sendMessage per message if rich messages are
+    rejected (unsupported Bot API version, bad content, etc.).
+    """
+    if not BOT_TOKEN or not TARGET_GROUP_ID:
+        logger.warning("Telegram skipped (BOT_TOKEN/TARGET_GROUP_ID missing)")
+        return False
+    ok = True
+    for rich, legacy in digest:
+        sent = False
+        try:
+            resp = requests.post(
+                TELEGRAM_API_URL.format(token=BOT_TOKEN, method="sendRichMessage"),
+                json={
+                    "chat_id": TARGET_GROUP_ID,
+                    "rich_message": {"html": rich},
+                },
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                sent = True
+                logger.info(f"Telegram rich message sent ({len(rich)} chars)")
+            else:
+                logger.warning(
+                    f"sendRichMessage returned HTTP {resp.status_code}: "
+                    f"{resp.text[:200]}; falling back to sendMessage"
+                )
+        except Exception as exc:
+            logger.warning(
+                f"sendRichMessage failed: {exc}; falling back to sendMessage"
+            )
+        if not sent:
+            ok = send_telegram([legacy]) and ok
+        time.sleep(1.5)
+    return ok
+
+
+def send_telegram_document(path: str) -> bool:
+    """Upload a local file to the target chat via sendDocument."""
+    if not BOT_TOKEN or not TARGET_GROUP_ID:
+        logger.warning("Telegram skipped (BOT_TOKEN/TARGET_GROUP_ID missing)")
+        return False
+    try:
+        with open(path, "rb") as f:
+            resp = requests.post(
+                TELEGRAM_API_URL.format(token=BOT_TOKEN, method="sendDocument"),
+                data={"chat_id": str(TARGET_GROUP_ID)},
+                files={
+                    "document": (
+                        os.path.basename(path),
+                        f,
+                        "text/markdown",
+                    )
+                },
+                timeout=60,
+            )
+        if resp.status_code != 200:
+            logger.warning(
+                f"sendDocument returned HTTP {resp.status_code}: "
+                f"{resp.text[:200]}"
+            )
+            return False
+        logger.info(f"Telegram document sent ({os.path.basename(path)})")
+        return True
+    except Exception as exc:
+        logger.warning(f"sendDocument failed: {exc}")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -790,10 +890,6 @@ def main() -> int:
     parser.add_argument(
         "--max-enrich", type=int, default=0,
         help="cap number of events enriched this run (0 = no cap)",
-    )
-    parser.add_argument(
-        "--heartbeat", action="store_true",
-        help="send a Telegram message even when nothing new is found",
     )
     args = parser.parse_args()
 
@@ -911,15 +1007,14 @@ def run(args) -> int:
     if args.no_telegram:
         return 0
     if new_relevant:
-        messages = build_digest(new_relevant, period_label)
-        send_telegram(messages)
-    elif args.heartbeat:
-        text = (
-            f"🛰 <b>Luma SG Discovery</b> — nothing new · "
-            f"{len(catalog)} upcoming tracked\n"
-            f"<i>🕒 Scanned: {html.escape(period_label)}</i>"
-        )
-        send_telegram([text])
+        if DIGEST_AS_MD_FILE:
+            md_path = write_digest_markdown(new_relevant, period_label)
+            send_telegram_digest(
+                [_digest_header(len(new_relevant), period_label)]
+            )
+            send_telegram_document(md_path)
+        else:
+            send_telegram_digest(build_digest(new_relevant, period_label))
     else:
         logger.info("No new relevant events; Telegram skipped")
     return 0
