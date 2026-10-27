@@ -278,11 +278,23 @@ You are given an event name and its Luma description. Return:
     "buffet available for purchase", "grab a coffee at the cafe"),
     vague mentions without a provider ("networking over dinner" at a
     venue), or no food mention at all.
+  IMPORTANT: a mere mention of a meal does NOT mean food is provided
+  or free. Event titles and agenda/format lines such as "exclusive
+  merchant leadership lunch", "lunch and learn", "join us for lunch",
+  or "continue the conversation over dinner" describe the event's
+  format, not who pays — attendees may well buy their own food.
+  Classify these as "none" unless the description clearly states the
+  organiser provides, serves, caters, or covers the food (e.g.
+  "lunch will be provided", "dinner is on us", "catered dinner for
+  attendees").
   When in doubt, choose "none".
 - food_evidence: 0-3 VERBATIM quotes from the description (each under
-  200 characters) that prove food is provided. Empty list if level is
-  "none". Never paraphrase or invent quotes. Never quote a schedule
-  line such as "12:00-13:00 Lunch Break" as evidence.
+  200 characters) that prove food is PROVIDED to attendees — not
+  merely that a meal, lunch or dinner is mentioned. Empty list if
+  level is "none". Never paraphrase or invent quotes. Never quote a
+  schedule line such as "12:00-13:00 Lunch Break" as evidence, and
+  never quote title/format lines like "merchant leadership lunch" or
+  "continue the conversation over dinner" as evidence.
 - context: one punchy sentence (max 20 words) describing what the
   event actually is. Plain text, no emojis.
 """
@@ -542,7 +554,10 @@ DIGEST_AS_MD_FILE = os.getenv("LUMA_DISCOVERY_MD_DIGEST", "1") != "0"
 def _event_rows(entry: dict) -> List[tuple]:
     """(emoji, label, value) rows for one event."""
     start_dt = datetime.fromisoformat(entry["start_iso"]).astimezone(SGT)
+    category = CATEGORY_LABELS.get(entry.get("category", ""), entry.get("category", ""))
     rows = [("📅", "Date", start_dt.strftime("%a %d %b %Y, %H:%M SGT"))]
+    if category:
+        rows.append(("🏷️", "Category", category))
     if entry.get("venue"):
         rows.append(("📍", "Location", " ".join(entry["venue"].split())))
     if entry.get("context"):
