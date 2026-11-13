@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from linkedin.client import LINKEDIN_API_VERSION, LinkedInClient
 
@@ -14,6 +14,7 @@ def test_list_organization_posts_parses_elements():
     assert posts == [{"id": "urn:li:share:1"}]
     args, kwargs = session.get.call_args
     assert "https://api.linkedin.com/rest/posts" in args[0]
+    assert "viewContext=READER" in args[0]
     assert kwargs["headers"]["LinkedIn-Version"] == LINKEDIN_API_VERSION
     assert kwargs["headers"]["Authorization"] == "Bearer tok"
 
@@ -28,7 +29,8 @@ def test_get_image_download_url():
     assert client.get_image_download_url("urn:li:image:ABC") == "https://media.example/img.jpg"
 
 
-def test_list_posts_retries_once_on_429():
+@patch("linkedin.client.time.sleep")
+def test_list_posts_retries_once_on_429(mock_sleep):
     session = MagicMock()
     bad = MagicMock(status_code=429, text="slow down")
     good = MagicMock(status_code=200)
@@ -37,3 +39,4 @@ def test_list_posts_retries_once_on_429():
     client = LinkedInClient(session, "tok")
     assert client.list_organization_posts("123") == []
     assert session.get.call_count == 2
+    mock_sleep.assert_called_once_with(2)

@@ -69,7 +69,7 @@ def forward_mapped_post(mapped: MappedPost, li_client, bot_token: str, chat_id: 
                 )
             return telegram_out.send_text(bot_token, chat_id, caption, session)
         return telegram_out.send_media_group(bot_token, chat_id, blobs, caption, session)
-    return True
+    return False
 
 
 def process_posts(

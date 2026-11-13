@@ -21,7 +21,8 @@ class LinkedInClient:
     def list_organization_posts(self, org_id: str, count: int = 50) -> List[Dict[str, Any]]:
         author = quote(f"urn:li:organization:{org_id}", safe="")
         url = (
-            f"{API_BASE}/posts?author={author}&q=author&count={count}&sortBy=CREATED"
+            f"{API_BASE}/posts?author={author}&q=author&count={count}"
+            f"&sortBy=CREATED&viewContext=READER"
         )
         resp = self.session.get(url, headers=self._headers(), timeout=30)
         if resp.status_code == 429:
