@@ -1,0 +1,21 @@
+docs/superpowers/plans/2026-11-13-linkedin-to-telegram-forwarder.md
+  s_ec477960e05b5a::t_7789b45c15e978 1-1570
+docs/superpowers/specs/2026-11-13-linkedin-to-telegram-forwarder-design.md
+  s_ec477960e05b5a::t_b5e6522086f51a 1-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eabf9cb836b814e040b18516a7afcb75b7b82423",
+  "prompts": {},
+  "sessions": {
+    "s_ec477960e05b5a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "39663016-0983-4a99-9ebf-c1a7db38d74e",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
