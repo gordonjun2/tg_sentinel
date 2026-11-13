@@ -1,0 +1,25 @@
+linkedin_oauth.py
+  s_bdf69c8eeee206::t_b5a4b278ff4009 1-121
+linkedin/tests/test_oauth_helpers.py
+  s_bdf69c8eeee206::t_50f1ddf734d8c1 1-13
+README.md
+  s_bdf69c8eeee206::t_825b13d5c0e9e9 18,45-51
+.env.example
+  s_bdf69c8eeee206::t_d5aa3a63cbb1fe 55-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f777318f1f7b83938c6604acdc9e160ef467123e",
+  "prompts": {},
+  "sessions": {
+    "s_bdf69c8eeee206": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7a719cb4-8347-4281-8be2-ea51a27b9b9e",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
