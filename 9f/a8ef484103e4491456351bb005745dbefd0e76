@@ -1,0 +1,24 @@
+.gitignore
+  s_ec477960e05b5a::t_2857f99bf62345 245-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9fa8ef484103e4491456351bb005745dbefd0e76",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_ec477960e05b5a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "39663016-0983-4a99-9ebf-c1a7db38d74e",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
