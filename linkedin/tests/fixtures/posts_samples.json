@@ -1,0 +1,45 @@
+{
+  "text": {
+    "id": "urn:li:share:111",
+    "commentary": "Hello SISC",
+    "content": {}
+  },
+  "image": {
+    "id": "urn:li:ugcPost:222",
+    "commentary": "Photo day",
+    "content": {
+      "media": { "id": "urn:li:image:ABC" }
+    }
+  },
+  "multi": {
+    "id": "urn:li:ugcPost:333",
+    "commentary": "Album",
+    "content": {
+      "multiImage": {
+        "images": [
+          { "id": "urn:li:image:A" },
+          { "id": "urn:li:image:B" }
+        ]
+      }
+    }
+  },
+  "article": {
+    "id": "urn:li:share:444",
+    "commentary": "Read this",
+    "content": {
+      "article": { "source": "https://example.com/post" }
+    }
+  },
+  "video": {
+    "id": "urn:li:ugcPost:555",
+    "commentary": "Watch",
+    "content": {
+      "media": { "id": "urn:li:video:XYZ" }
+    }
+  },
+  "poll": {
+    "id": "urn:li:ugcPost:666",
+    "commentary": "Vote",
+    "content": { "poll": { "question": "A?" } }
+  }
+}
