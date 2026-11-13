@@ -1,0 +1,22 @@
+linkedin/tests/test_telegram_out.py
+  s_bde0155890354d::t_58c5ae87821b80 11
+  s_bde0155890354d::t_9b0f44b1c632e6 1-10,12-26
+linkedin/telegram_out.py
+  s_bde0155890354d::t_6f0d728a3f20e8 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "829111965099571475a27bb11780c6b639028b9b",
+  "prompts": {},
+  "sessions": {
+    "s_bde0155890354d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "35d90486-2823-40b1-bde5-4bea449b4c9d",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
