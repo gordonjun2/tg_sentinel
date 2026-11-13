@@ -1,0 +1,21 @@
+linkedin/tests/test_tokens.py
+  s_2e3cffe0c177a6::t_c5143c6bea59ef 1-71
+linkedin/tokens.py
+  s_2e3cffe0c177a6::t_a8ff343f71de85 1-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89a25c187133c21d4838c72c2b1fccd20769cc60",
+  "prompts": {},
+  "sessions": {
+    "s_2e3cffe0c177a6": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9ada5039-837c-48f0-b250-89a4787f154b",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
