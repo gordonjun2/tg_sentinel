@@ -1,0 +1,23 @@
+linkedin/tests/test_mapping.py
+  s_202610280b6ea4::t_df5889a85d54ef 1-62
+linkedin/mapping.py
+  s_202610280b6ea4::t_34bfef01772538 1-111
+linkedin/tests/fixtures/posts_samples.json
+  s_202610280b6ea4::t_1e6115e06c4044 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e252b958f06e551ba5da9b0a3374f3a22cb416b2",
+  "prompts": {},
+  "sessions": {
+    "s_202610280b6ea4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "0e7d4c13-e65b-4ea4-838f-d2aaf4a0a976",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
