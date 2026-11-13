@@ -15,6 +15,7 @@ idempotent orchestrator.
 | **Luma reminder** | Cron job that sends Luma event reminders to the admin group | `python luma_reminder.py` | crontab (`luma_reminder.sh`) | Active (cron) |
 | **Gmail + Calendar** | Email importance triage, meeting reminders, calendar sync | `python -m gmail_calendar.bot` | — | **On hold** (kept in repo, not started) |
 | **Luma scraper** | Utility: scrape a Luma event's start date from a public URL | `python luma_scraper.py <url>` | on demand | Active |
+| **LinkedIn forwarder** | Cron: poll company page posts → Telegram `TARGET_GROUP_ID` | `python linkedin_forwarder.py` | crontab (`linkedin_forwarder.sh`) | Pending CMA approval |
 
 ## Setup
 
@@ -41,6 +42,13 @@ idempotent orchestrator.
    Checks `GEMINI_API_KEY`, `OPENAI_API_KEY` (validity + configured
    enrichment model availability) and `FIRECRAWL_API_KEY` (validity +
    remaining credits). Exits non-zero if any key fails.
+5. LinkedIn company-page forwarder (requires Community Management API approval):
+   - Fill `LINKEDIN_*` in `.env`.
+   - After CMA approval, run `python linkedin_oauth.py --list-orgs` as a page
+     admin; set `LINKEDIN_ORGANIZATION_ID` from the listed org URN.
+   - First cron/manual run seeds state (`python linkedin_forwarder.py` or
+     `--seed-only`).
+   - Crontab: `*/5 * * * * /root/tg_sentinel/linkedin_forwarder.sh`
 
 ## Running
 
