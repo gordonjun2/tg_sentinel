@@ -242,3 +242,6 @@ vertex_sa.json
 
 # Scratch/example outputs and generated discovery reports
 tmp/
+
+# Git worktrees (local isolation)
+.worktrees/
