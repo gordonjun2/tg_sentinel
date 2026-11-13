@@ -1,0 +1,21 @@
+linkedin_forwarder.py
+  s_381019ec13e5a4::t_3fd48fc8f0736a 1-104
+linkedin_forwarder.sh
+  s_381019ec13e5a4::t_4c373a86d3839a 1-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "505089e97881ebadf298ee52b9bdccf5435cf85a",
+  "prompts": {},
+  "sessions": {
+    "s_381019ec13e5a4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e6b4e1ee-8c79-4611-bbe4-b5cc6103e9d5",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
