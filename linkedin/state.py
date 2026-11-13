@@ -2,6 +2,12 @@ import json
 import os
 from typing import Dict
 
+
+def default_state() -> dict:
+    return {"version": 1, "seeded": False, "seen": {}}
+
+
+# Do not mutate; use default_state() for a fresh dict (avoids shared nested "seen").
 DEFAULT_STATE: Dict = {"version": 1, "seeded": False, "seen": {}}
 
 
@@ -17,7 +23,7 @@ def load_state(path: str) -> dict:
             state["version"] = 1
         return state
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"version": 1, "seeded": False, "seen": {}}
+        return default_state()
 
 
 def save_state(path: str, state: dict) -> None:
