@@ -1,0 +1,21 @@
+linkedin/state.py
+  s_f225fb791adba9::t_3f8ae73ba9b902 5-10,26
+linkedin/tests/test_state.py
+  s_f225fb791adba9::t_dc101596d60fbe 3,16,27,36-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77ea9de1f3064304d05274e800bfe60cb8141d42",
+  "prompts": {},
+  "sessions": {
+    "s_f225fb791adba9": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "95739485-9864-4f88-887a-bff26ae1ddab",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
