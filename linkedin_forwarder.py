@@ -10,7 +10,6 @@ import time
 
 import requests
 
-from config import BOT_TOKEN, TARGET_GROUP_ID
 from linkedin.client import LinkedInClient
 from linkedin.forward import process_posts
 from linkedin.state import load_state
@@ -29,14 +28,28 @@ TOKEN_FILE = os.path.join(_ROOT, "data", "linkedin_tokens.json")
 LOCK_FILE = os.path.join(_ROOT, "data", "linkedin_forwarder.lock")
 REFRESH_SKEW = 300.0
 
+_REQUIRED_ENV = (
+    "LINKEDIN_CLIENT_ID",
+    "LINKEDIN_CLIENT_SECRET",
+    "LINKEDIN_ORGANIZATION_ID",
+)
+
+
+def linkedin_env_ready() -> bool:
+    """True when all required LinkedIn .env keys are non-empty."""
+    for key in _REQUIRED_ENV:
+        if not (os.getenv(key) or "").strip():
+            return False
+    return True
+
 
 def run(args) -> int:
-    client_id = os.getenv("LINKEDIN_CLIENT_ID") or ""
-    client_secret = os.getenv("LINKEDIN_CLIENT_SECRET") or ""
-    org_id = os.getenv("LINKEDIN_ORGANIZATION_ID") or ""
-    if not client_id or not client_secret or not org_id:
-        logger.error("LINKEDIN_CLIENT_ID/SECRET/ORGANIZATION_ID required")
-        return 1
+    # Imported here so missing LinkedIn .env keys can early-exit before config loads.
+    from config import BOT_TOKEN, TARGET_GROUP_ID
+
+    client_id = (os.getenv("LINKEDIN_CLIENT_ID") or "").strip()
+    client_secret = (os.getenv("LINKEDIN_CLIENT_SECRET") or "").strip()
+    org_id = (os.getenv("LINKEDIN_ORGANIZATION_ID") or "").strip()
     if not os.path.exists(TOKEN_FILE):
         logger.error("Missing %s — run linkedin_oauth.py first", TOKEN_FILE)
         return 1
@@ -86,6 +99,14 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--seed-only", action="store_true")
     args = parser.parse_args()
+
+    if not linkedin_env_ready():
+        missing = [k for k in _REQUIRED_ENV if not (os.getenv(k) or "").strip()]
+        logger.info(
+            "LinkedIn forwarder skipped: missing .env key(s) %s",
+            ", ".join(missing),
+        )
+        return 0
 
     os.makedirs(os.path.join(_ROOT, "data"), exist_ok=True)
     lock = open(LOCK_FILE, "w")
