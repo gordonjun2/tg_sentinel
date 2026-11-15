@@ -1,0 +1,48 @@
+partner_message_summarisation/partner_message_summarisation_bot.sh
+  s_e05128faf5dbc2::t_e303f1091cff15 2-3,6-8,10,12-14
+scripts/deploy.sh
+  s_e05128faf5dbc2::t_4eb411ef40d302 1-75
+README.md
+  s_e05128faf5dbc2::t_b47ef66189e99b 55-56,58-60,63-67
+  s_e05128faf5dbc2::t_b1bc772f2c54b9 102-105,107
+conftest.py
+  s_e05128faf5dbc2::t_d42346ac7574e9 1-29
+deploy/systemd/tg-sentinel-bot.service
+  s_e05128faf5dbc2::t_34790f3ddd6be3 1-18
+.github/workflows/deploy.yml
+  s_e05128faf5dbc2::t_7cc393d0a6efd8 1-41
+bot_script.sh
+  s_e05128faf5dbc2::t_15701fe8504db2 2-3,5,7-9
+partner_message_summarisation/tests/conftest.py
+  s_e05128faf5dbc2::t_35719da99dd9ba 17-18
+deploy/systemd/tg-sentinel-partner.service
+  s_e05128faf5dbc2::t_068ce4eda1fc65 1-18
+.github/workflows/ci.yml
+  s_e05128faf5dbc2::t_7869e40398b262 1-33,35
+  s_e05128faf5dbc2::t_84ac1ce90edb6f 34
+partner_message_summarisation/README.md
+  s_e05128faf5dbc2::t_6f79af5e77f0d9 77,81
+  s_e05128faf5dbc2::t_6f75d326534fe0 57,60-62,66-68,70
+docs/superpowers/plans/2026-11-15-cicd-optional-restart.md
+  s_e05128faf5dbc2::t_f271ac4e3d9fb8 1-313
+docs/DEPLOYMENT.md
+  s_e05128faf5dbc2::t_861b0307b47d0e 1-144
+start_all.sh
+  s_e05128faf5dbc2::t_d06af45b9a3d14 2,4-7,9-11,13,15,17,19-20,23-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac739b60b1afa43f6b5219718483c2a7bd44d357",
+  "prompts": {},
+  "sessions": {
+    "s_e05128faf5dbc2": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "df203b26-c84a-4d1f-b233-15b6297721b4",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
