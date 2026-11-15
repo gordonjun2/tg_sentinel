@@ -1,0 +1,30 @@
+.gitignore
+  s_3938415b4dbe22::t_8e7a6a8ad51f1c 248-250
+tests/test_rich_messages.py
+  s_3938415b4dbe22::t_00ea27d14c06d4 6-10,106-149
+rich_messages.py
+  s_3938415b4dbe22::t_cd177e3eb59559 4,11-13,27-84,92-93,96,99-108,116-118,122-126,149-152,184-259,276-304
+  s_3938415b4dbe22::t_9a581d27d667c9 305-307
+bot.py
+  s_3938415b4dbe22::t_4609ac3749cc1a 54
+  s_3938415b4dbe22::t_dd9bcfac68e14a 544,547-550,554-561
+  s_3938415b4dbe22::t_4022fd79bbef88 415,419-421,424-431
+onboarding_copy.py
+  s_3938415b4dbe22::t_bc29af355411cc 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99f20ec0833d3a7ee916381ff889eebf37eb3a24",
+  "prompts": {},
+  "sessions": {
+    "s_3938415b4dbe22": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "feae54c3-ef36-490b-98bf-147f4cff589a",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
