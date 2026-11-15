@@ -1,0 +1,28 @@
+docs/superpowers/specs/2026-11-15-sisc-serendip-start-onboarding-design.md
+  s_3e3181d6cc271c::t_9a309abd04e070 1-53,55-56,58-59,61-127,129-162
+  s_3e3181d6cc271c::t_6d8d8e74257bcc 128
+  s_3e3181d6cc271c::t_812e1e83fefb19 54,57,60
+docs/superpowers/plans/2026-11-15-sisc-serendip-start-onboarding.md
+  s_3e3181d6cc271c::t_499e09421b3e4f 1-741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d62a3005fc0737f398078c4c9851e65c2765706",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_3e3181d6cc271c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "34043047-7883-48d1-a453-ab58d51c729a",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
