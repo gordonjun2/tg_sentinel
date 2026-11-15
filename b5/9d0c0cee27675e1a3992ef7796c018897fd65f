@@ -1,0 +1,30 @@
+docs/DEPLOYMENT.md
+  s_ff9c9f226bc419::t_97c64808d1d8a5 48-59
+bot.py
+  s_ff9c9f226bc419::t_fa161fc73f5c1b 24
+  s_ff9c9f226bc419::t_7c0396af896469 2177-2180,2184,2190-2194
+  s_ff9c9f226bc419::t_d45fcdb5f5764b 82-86
+  s_ff9c9f226bc419::t_775ae7c8598f52 2195
+serendip_update_forwarder.py
+  s_ff9c9f226bc419::t_d6798892bc5123 1-82
+config.py
+  s_ff9c9f226bc419::t_f66570faa90417 47-58
+tests/test_serendip_update_forwarder.py
+  s_ff9c9f226bc419::t_55d89d6de965ce 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b59d0c0cee27675e1a3992ef7796c018897fd65f",
+  "prompts": {},
+  "sessions": {
+    "s_ff9c9f226bc419": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "38a37a6d-5dfb-4c6e-98c2-ee1514a82906",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
