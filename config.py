@@ -35,6 +35,15 @@ try:
 except ValueError:
     raise ValueError("TARGET_SUB_GROUP_ID must be a valid integer")
 
+
+def require_mini_app_url(raw: str | None) -> str:
+    if not raw or not raw.strip():
+        raise ValueError("MINI_APP_URL not found in environment variables")
+    return raw.strip()
+
+
+MINI_APP_URL = require_mini_app_url(os.getenv("MINI_APP_URL"))
+
 GOOGLE_DRIVE_MAIN_FOLDER_ID = os.getenv("GOOGLE_DRIVE_MAIN_FOLDER_ID")
 if not GOOGLE_DRIVE_MAIN_FOLDER_ID:
     raise ValueError("GOOGLE_DRIVE_MAIN_FOLDER_ID not found in environment variables")
