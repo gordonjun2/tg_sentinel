@@ -1,0 +1,44 @@
+scripts/build_onboarding_gifs.py
+  s_3e3181d6cc271c::t_3130c49ef7eeee 1-181
+onboarding_media.py
+  s_3e3181d6cc271c::t_1f2e39e88651e6 1-20
+docs/superpowers/specs/2026-11-15-sisc-serendip-start-onboarding-design.md
+  s_3e3181d6cc271c::t_6fb0bb6ce5b934 38-40
+  s_3e3181d6cc271c::t_b02aaeea460820 165-167
+tests/test_rich_messages.py
+  s_3e3181d6cc271c::t_d45d1fabe35bf8 1,6
+  s_3e3181d6cc271c::t_efa2a6ea9f123f 49-81
+rich_messages.py
+  s_3e3181d6cc271c::t_7cdd656f8ac5cf 4-5,12-57
+  s_3e3181d6cc271c::t_c31138e30e4696 58-59
+tests/test_onboarding_media.py
+  s_3e3181d6cc271c::t_f9395aca98dbc9 1-13
+bot.py
+  s_3e3181d6cc271c::t_5115ab239684f0 54,64-67
+  s_3e3181d6cc271c::t_6056eb54a3fa4a 877
+  s_3e3181d6cc271c::t_9c7d057200868f 2004-2005
+  s_3e3181d6cc271c::t_6647c2c1a41336 362-364
+  s_3e3181d6cc271c::t_c6587b7cd62c47 822
+  s_3e3181d6cc271c::t_bab31c346d529b 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e124bc67a88b10d5b37d82f58d4ced6d617011a",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_3e3181d6cc271c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "34043047-7883-48d1-a453-ab58d51c729a",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
