@@ -1,0 +1,32 @@
+tests/test_start_routing.py
+  s_c1e0d38e80c03f::t_eb325d88afe4b8 21-43
+  s_c1e0d38e80c03f::t_86009198a40242 1-20
+bot.py
+  s_c1e0d38e80c03f::t_5e8c2977282699 76-77,82-91
+  s_c1e0d38e80c03f::t_dcaa4ae295cbc1 310-311,315,325-365,368-371,387-391,395-437,442-445
+  s_c1e0d38e80c03f::t_dedbab07301284 14
+  s_c1e0d38e80c03f::t_71290511ef872b 2082-2084
+  s_c1e0d38e80c03f::t_bcb8b3cab40a36 40,53-60
+  s_c1e0d38e80c03f::t_2cc1771533ae94 92-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30f3b82ea9ed342b709be7284ea9f741550d409c",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_c1e0d38e80c03f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a4254f45-32ed-4331-b5c9-97dd3bd4d029",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
