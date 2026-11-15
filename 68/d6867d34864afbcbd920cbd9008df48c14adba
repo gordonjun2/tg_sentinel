@@ -1,0 +1,31 @@
+tests/conftest.py
+  s_cff3274eba3fa7::t_1a1a729075dd83 1-6
+.env.example
+  s_cff3274eba3fa7::t_cc6c9b3f2ec40b 5
+tests/test_config_mini_app_url.py
+  s_cff3274eba3fa7::t_06d1f4d4263eb0 2,4,31,33-34,37,39-40,43,45-46,49,51-52
+  s_cff3274eba3fa7::t_bdddbd548a4690 1,3,5-30,32,35-36,38,41-42,44,47-48,50
+config.py
+  s_cff3274eba3fa7::t_8db18aa12df957 38-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68d6867d34864afbcbd920cbd9008df48c14adba",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_cff3274eba3fa7": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "5bb6ad26-4e60-48dd-bef7-56cd7bfaf2f2",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
