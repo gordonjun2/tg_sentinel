@@ -1,0 +1,24 @@
+tests/test_onboarding_copy.py
+  s_b83d0f0fe5bce6::t_194b6d09290455 32-33
+  s_b83d0f0fe5bce6::t_cda903b5241120 69-74
+bot.py
+  s_b83d0f0fe5bce6::t_a4b8702ad37fd7 405
+onboarding_copy.py
+  s_b83d0f0fe5bce6::t_78493fe4032119 70-75,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0a7f6678a7ba881575bf0dae2ea1827120851d6",
+  "prompts": {},
+  "sessions": {
+    "s_b83d0f0fe5bce6": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "ed59fcfe-9bd0-4f9e-8d60-127f630f5625",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
