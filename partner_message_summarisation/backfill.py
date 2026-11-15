@@ -44,6 +44,15 @@ _SERVICE_PATTERN = "partner_message_summarisation.bot"
 
 def service_running() -> bool:
     try:
+        unit = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "tg-sentinel-partner"],
+            capture_output=True,
+        )
+        if unit.returncode == 0:
+            return True
+    except Exception:  # noqa: BLE001 — systemctl may be absent off-VPS
+        pass
+    try:
         result = subprocess.run(
             ["pgrep", "-f", _SERVICE_PATTERN], capture_output=True
         )
