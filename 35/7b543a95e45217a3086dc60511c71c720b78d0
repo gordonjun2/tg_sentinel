@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-11-15-hidden-serendip-command-design.md
+  s_5189b91ae06888::t_742dab1bc4d0e8 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "357b543a95e45217a3086dc60511c71c720b78d0",
+  "prompts": {},
+  "sessions": {
+    "s_5189b91ae06888": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "20ac0194-6a73-4ac5-b3f4-3caf8c1540eb",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
