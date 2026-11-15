@@ -11,6 +11,7 @@ from telegram import (
     BotCommand,
     BotCommandScopeChat,
     BotCommandScopeAllPrivateChats,
+    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -36,6 +37,7 @@ from config import (
     TELEGRAM_API_KEY,
     TELEGRAM_HASH,
     MAX_AUDIO_FILE_SIZE,
+    MINI_APP_URL,
 )
 from database import db, UserState, UserData
 import telegram
@@ -48,6 +50,14 @@ import os
 import time
 from pyrogram import Client, utils
 from ai_enrichment import process_enrichment, buffer, admin_buffer
+from rich_messages import send_rich_message
+from onboarding_copy import (
+    INTRO_MARKDOWN,
+    approved_invite_markdown,
+    member_followup_markdown,
+    pending_approval_markdown,
+    survey_question_markdown,
+)
 
 # Enable logging
 logging.basicConfig(
@@ -63,8 +73,22 @@ INTRO_TEXT = (
     "🌐 Learn more about us: https://www.sisc.club/"
 )
 
+APPLY_JOIN_CALLBACK = "apply_join"
+
 # Initialize transcriber
 transcriber = AudioTranscriber()
+
+
+def resolve_start_branch(*, is_member: bool, state: UserState) -> str:
+    if is_member:
+        return "member"
+    if state == UserState.APPROVED:
+        return "approved_invite"
+    if state in (UserState.PENDING_APPROVAL, UserState.PENDING_REJECTION):
+        return "pending"
+    if state == UserState.IN_SURVEY:
+        return "in_survey"
+    return "apply"
 
 
 # [Pyrogram] Monkey Patch
@@ -283,40 +307,74 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not user_data:
         user_data = db.create_user(user_id, username)
 
-    # Check if user is already in target group
+    is_member = False
+    group_link = None
     try:
         member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
         if member.status not in ["left", "kicked", "banned"]:
-            await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
-
+            is_member = True
             chat = await context.bot.get_chat(TARGET_GROUP_ID)
             if chat.username:
                 group_link = f"https://t.me/{chat.username}"
             else:
                 group_link = chat.invite_link
-
-            await update.message.reply_text(
-                f"You are already a member of the group! Click here to open the chat: {group_link}"
-            )
-            return
     except Exception:
         # If we can't get member info, continue with the flow
         pass
 
-    if user_data.state == UserState.APPROVED:
-        await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
+    branch = resolve_start_branch(is_member=is_member, state=user_data.state)
+
+    if branch == "apply":
+        apply_markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "Apply to join SISC", callback_data=APPLY_JOIN_CALLBACK
+                    )
+                ]
+            ]
+        )
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            INTRO_MARKDOWN,
+            reply_markup=apply_markup.to_dict(),
+        )
+    else:
+        await send_rich_message(BOT_TOKEN, user_id, INTRO_MARKDOWN)
+
+    if branch == "member":
+        member_markup = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
+                    )
+                ],
+                [InlineKeyboardButton("Open SISC group", url=group_link)],
+            ]
+        )
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            member_followup_markdown(),
+            reply_markup=member_markup.to_dict(),
+        )
+        return
+
+    if branch == "approved_invite":
         try:
-            # Revoke old links and generate new one
             invite_link = await revoke_and_create_invite_link(context.bot, user_data)
-            await update.message.reply_text(
-                f"You were already approved! Here's a new invite link to join: {invite_link}"
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                approved_invite_markdown(invite_link),
             )
         except telegram.error.BadRequest as e:
             if "rights to manage chat invite link" in str(e).lower():
                 await update.message.reply_text(
                     "You were already approved! Please wait while I notify the admins to help you join."
                 )
-                # Notify admins about the missing permission and the pending user
                 await context.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
                     text=f"⚠️ Cannot create invite link for approved user {username or user_id} because bot "
@@ -326,22 +384,65 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 raise e
         return
 
-    if user_data.state == UserState.PENDING_APPROVAL:
-        await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
-        await update.message.reply_text(
-            "Your request is pending approval. Please wait for admin review."
+    if branch == "pending":
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            pending_approval_markdown(),
         )
         return
 
-    # Start the survey
+    if branch == "in_survey":
+        question_index = user_data.current_question
+        question_text = SURVEY_QUESTIONS[question_index]
+        reply_markup = None
+        if question_text == "How do you know about SISC?":
+            sisc_markup = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "SISC Website", callback_data="SISC Website"
+                        ),
+                        InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "Physical Event", callback_data="Physical Event"
+                        ),
+                        InlineKeyboardButton("Referral", callback_data="Referral"),
+                    ],
+                ]
+            )
+            reply_markup = sisc_markup.to_dict()
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            survey_question_markdown(
+                question_index, len(SURVEY_QUESTIONS), question_text
+            ),
+            reply_markup=reply_markup,
+        )
+        return
+
+    # apply: intro already sent with Apply keyboard; do not set IN_SURVEY here
+
+
+async def handle_apply_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    if query.data != APPLY_JOIN_CALLBACK:
+        return
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    user_data = db.get_user(user_id) or db.create_user(user_id, username)
     user_data.state = UserState.IN_SURVEY
     user_data.current_question = 0
     user_data.answers = {}
     db.update_user(user_data)
-
-    await update.message.reply_text(INTRO_TEXT, parse_mode=ParseMode.MARKDOWN)
-    await update.message.reply_text(
-        f"Question 1: {SURVEY_QUESTIONS[0]}", parse_mode=ParseMode.MARKDOWN
+    await send_rich_message(
+        BOT_TOKEN,
+        user_id,
+        survey_question_markdown(0, len(SURVEY_QUESTIONS), SURVEY_QUESTIONS[0]),
     )
 
 
@@ -1978,6 +2079,9 @@ def main() -> None:
         )
     )
     # application.add_handler(CallbackQueryHandler(handle_survey_back_navigation, pattern=r'^survey_back$'))
+    application.add_handler(
+        CallbackQueryHandler(handle_apply_join, pattern=rf"^{APPLY_JOIN_CALLBACK}$")
+    )
     application.add_handler(CallbackQueryHandler(handle_survey_option_selection))
 
     # Handler for rejection reasons - only in admin group and must be a reply
