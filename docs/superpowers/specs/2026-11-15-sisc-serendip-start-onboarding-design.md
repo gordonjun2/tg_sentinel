@@ -67,7 +67,7 @@ One scannable rich message. Exact wording may be tuned at implement time; struct
 2. **SISC** — 2–3 short sentences (tight-knit AI community; founders, builders, curious minds)  
 3. Short bullet list: Urgency, Safe Space, Serendipity  
 4. Link to https://www.sisc.club/  
-5. **Serendip** — one sentence: intent-based matching inside Telegram (people who matter, by intent, not by profile)  
+5. **Serendip** — short blurb: Telegram Mini App; AI matches by personality, goals, and intent  
 6. Gate line: to use Serendip, join SISC first  
 7. State-specific follow-up via keyboard or a short second message (status / invite / question)
 
@@ -91,7 +91,7 @@ The Super-Individual Secret Club is a tight-knit community for curious minds who
 ---
 
 ## Serendip
-Serendip helps you find people who matter inside Telegram, by intent, not by profile.
+Serendip is a Telegram Mini App that helps the right people find each other. Share your personality, goals, and intentions, and AI surfaces meaningful matches for you.
 
 **To use Serendip, you need SISC access first.**
 ```

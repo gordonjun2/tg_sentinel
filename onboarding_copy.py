@@ -13,7 +13,7 @@ The Super-Individual Secret Club is a tight-knit community for curious minds who
 ---
 
 ## Serendip
-Serendip helps you find people who matter inside Telegram, by intent, not by profile.
+Serendip is a Telegram Mini App that helps the right people find each other. Share your personality, goals, and intentions, and AI surfaces meaningful matches for you.
 
 **To use Serendip, you need SISC access first.**
 """
