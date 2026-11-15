@@ -56,6 +56,7 @@ from onboarding_copy import (
     approved_invite_markdown,
     member_followup_markdown,
     pending_approval_markdown,
+    rejection_markdown,
     survey_complete_markdown,
     survey_question_markdown,
 )
@@ -749,9 +750,10 @@ async def handle_admin_decision(
             )
 
             # Notify user with new link
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"Here's a new invite link to join the group: {invite_link}",
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                approved_invite_markdown(invite_link),
             )
             await query.edit_message_text(
                 f"User {user_data.username or user_id} was already approved. Sent new invite link."
@@ -802,9 +804,10 @@ async def handle_admin_decision(
             db.update_user(user_data)
 
             # Notify user
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"Your join request has been approved! Click here to join: {invite_link}",
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                approved_invite_markdown(invite_link),
             )
 
             # Remove inline keyboard and update message text
@@ -905,9 +908,10 @@ async def handle_rejection_reason(
     db.update_user(user_data)
 
     # Notify user with reason
-    await context.bot.send_message(
-        chat_id=user_data.user_id,
-        text=f"Sorry, your join request has been rejected.\nReason: {rejection_reason}",
+    await send_rich_message(
+        BOT_TOKEN,
+        user_data.user_id,
+        rejection_markdown(rejection_reason),
     )
 
     # Remove inline keyboard from original message if we have its ID
