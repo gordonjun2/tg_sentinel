@@ -1,0 +1,20 @@
+partner_message_summarisation/backfill.py
+  s_e05128faf5dbc2::t_65ba12890998fe 47-54
+  s_e05128faf5dbc2::t_87c847a3967ddf 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "736ffda1f4c253fecd78645080de4c984c6e9dff",
+  "prompts": {},
+  "sessions": {
+    "s_e05128faf5dbc2": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "df203b26-c84a-4d1f-b233-15b6297721b4",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
