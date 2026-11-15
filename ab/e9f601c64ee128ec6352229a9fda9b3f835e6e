@@ -1,0 +1,40 @@
+onboarding_copy.py
+  s_3938415b4dbe22::t_1a2299dbf2b9af 15-17,27,29-34,41,52,61-62,70,82,89,97-122
+  s_3938415b4dbe22::t_8a0d28f28f30fc 1,5
+  s_3938415b4dbe22::t_37545f1da944a6 3,7-10
+  s_3938415b4dbe22::t_a27921425a9f4f 78
+tests/test_onboarding_copy.py
+  s_3938415b4dbe22::t_2ac378eeb939c0 19
+  s_3938415b4dbe22::t_da0f94dabf85b0 80,82
+  s_3938415b4dbe22::t_62e6000c33d83d 18,20-21
+  s_3938415b4dbe22::t_3353dd11484d47 22,29,52-53,60-61,69,73-75,90
+bot.py
+  s_3938415b4dbe22::t_4e57e065e1ba2f 478
+  s_3938415b4dbe22::t_a53ea2c68566c3 740,751
+  s_3938415b4dbe22::t_12c5391b679423 85-120
+  s_3938415b4dbe22::t_5edbbfdf4ab836 671,679
+  s_3938415b4dbe22::t_5773d3e70789d5 59,65,67,69
+  s_3938415b4dbe22::t_5d353d3e30bc20 163,165
+  s_3938415b4dbe22::t_d455a30744b0be 405
+  s_3938415b4dbe22::t_077ee540e25174 532,538
+  s_3938415b4dbe22::t_d0255dd2c9e535 789
+  s_3938415b4dbe22::t_aaa52ec8f92f5f 595,608,624
+  s_3938415b4dbe22::t_b7ad60c21687ac 412
+  s_3938415b4dbe22::t_157669744759de 430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abe9f601c64ee128ec6352229a9fda9b3f835e6e",
+  "prompts": {},
+  "sessions": {
+    "s_3938415b4dbe22": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "feae54c3-ef36-490b-98bf-147f4cff589a",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
