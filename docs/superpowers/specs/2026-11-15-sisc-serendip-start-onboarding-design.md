@@ -35,6 +35,9 @@ Newcomers who `/start` the SISC gate bot get a SISC-only intro and immediately e
 | Mini App URL | Env `MINI_APP_URL`, value `https://serendip.sisc.club` |
 | Intro copy | Thin draft from SISC brand + Serendip vision; not a long essay |
 | Formatting | Full Rich Messages (`sendRichMessage`), not legacy HTML `parse_mode` only |
+| Media delivery | Approach 1: `sendAnimation` then Rich text (not media-inside-rich). No client-capability fallback (API success ≠ client can render rich). |
+| Non-member `/start` media | SISC hero GIF (title + tagline only) before intro |
+| Post-approval media | Serendip welcome GIF (mascot + onboarding title/body baked below) before invite Rich message |
 
 ## `/start` routing
 
@@ -159,4 +162,6 @@ bot.py (handlers, routing)
 2. Pending / mid-survey / approved-not-joined still see intro, then the correct status step.  
 3. In-group `/start` shows Launch Serendip (`https://serendip.sisc.club`) and Open SISC group.  
 4. Survey questions and completion/approval/rejection user messages use Rich Messages.  
-5. Existing admin approval workflow still works end-to-end.
+5. Existing admin approval workflow still works end-to-end.  
+6. Non-member `/start` sends SISC hero GIF before the Rich intro.  
+7. Approval invite DM sends Serendip welcome GIF (copy baked into the image) before the invite Rich message.

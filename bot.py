@@ -51,7 +51,7 @@ import os
 import time
 from pyrogram import Client, utils
 from ai_enrichment import process_enrichment, buffer, admin_buffer
-from rich_messages import send_rich_message
+from rich_messages import send_animation, send_rich_message
 from onboarding_copy import (
     INTRO_MARKDOWN,
     approved_invite_markdown,
@@ -60,6 +60,11 @@ from onboarding_copy import (
     rejection_markdown,
     survey_complete_markdown,
     survey_question_markdown,
+)
+from onboarding_media import (
+    SERENDIP_WELCOME_GIF,
+    SISC_HERO_GIF,
+    require_onboarding_gifs,
 )
 
 # Enable logging
@@ -353,6 +358,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
 
     branch = resolve_start_branch(is_member=is_member, state=user_data.state)
+
+    if not is_member:
+        await send_animation(BOT_TOKEN, user_id, SISC_HERO_GIF)
 
     if branch == "apply":
         apply_markup = InlineKeyboardMarkup(
@@ -811,6 +819,7 @@ async def handle_admin_decision(
             )
 
             # Notify user with new link
+            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_GIF)
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
@@ -865,6 +874,7 @@ async def handle_admin_decision(
             db.update_user(user_data)
 
             # Notify user
+            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_GIF)
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
@@ -1991,6 +2001,8 @@ async def _rss_monitor_loop() -> None:
 
 def main() -> None:
     """Start the bot."""
+    require_onboarding_gifs()
+
     # Reset any active transcriptions from previous runs
     reset_active_transcriptions()
 
