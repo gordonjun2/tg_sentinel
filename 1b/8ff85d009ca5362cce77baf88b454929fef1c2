@@ -1,0 +1,26 @@
+tests/test_rich_messages.py
+  s_59c345895afe9a::t_01dbd9e4f1bbea 1-47
+rich_messages.py
+  s_59c345895afe9a::t_47134d0109ef4f 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b8ff85d009ca5362cce77baf88b454929fef1c2",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_59c345895afe9a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "b2ebfa66-f99f-4dc3-80a5-dc1781821cb5",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
