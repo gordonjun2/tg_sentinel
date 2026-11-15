@@ -51,7 +51,7 @@ import os
 import time
 from pyrogram import Client, utils
 from ai_enrichment import process_enrichment, buffer, admin_buffer
-from rich_messages import send_animation, send_rich_message
+from rich_messages import send_rich_message, send_rich_message_with_animation
 from onboarding_copy import (
     INTRO_MARKDOWN,
     SERENDIP_PITCH_MARKDOWN,
@@ -402,8 +402,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     branch = resolve_start_branch(is_member=is_member, state=user_data.state)
 
-    await send_animation(BOT_TOKEN, user_id, SISC_HERO_ANIM)
-
     if branch == "apply":
         apply_markup = InlineKeyboardMarkup(
             [
@@ -414,14 +412,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ]
             ]
         )
-        await send_rich_message(
+        await send_rich_message_with_animation(
             BOT_TOKEN,
             user_id,
             INTRO_MARKDOWN,
-            reply_markup=apply_markup.to_dict(),
+            SISC_HERO_ANIM,
+            "sisc_hero",
+            apply_markup.to_dict(),
         )
     else:
-        await send_rich_message(BOT_TOKEN, user_id, INTRO_MARKDOWN)
+        await send_rich_message_with_animation(
+            BOT_TOKEN,
+            user_id,
+            INTRO_MARKDOWN,
+            SISC_HERO_ANIM,
+            "sisc_hero",
+            None,
+        )
 
     if branch == "member":
         member_rows = []
@@ -522,9 +529,6 @@ async def serendip_command(
 
     branch = resolve_serendip_branch(is_member=is_member)
 
-    await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_ANIM)
-    await send_rich_message(BOT_TOKEN, user_id, SERENDIP_PITCH_MARKDOWN)
-
     if branch == "member":
         rows = [
             [
@@ -537,15 +541,24 @@ async def serendip_command(
             rows.append(
                 [InlineKeyboardButton("💬 Open SISC group", url=group_link)]
             )
-        await send_rich_message(
+        await send_rich_message_with_animation(
             BOT_TOKEN,
             user_id,
-            serendip_member_followup_markdown(),
-            reply_markup=InlineKeyboardMarkup(rows).to_dict(),
+            SERENDIP_PITCH_MARKDOWN + "\n\n" + serendip_member_followup_markdown(),
+            SERENDIP_WELCOME_ANIM,
+            "serendip_welcome",
+            InlineKeyboardMarkup(rows).to_dict(),
         )
         return
 
-    await send_rich_message(BOT_TOKEN, user_id, serendip_gate_markdown())
+    await send_rich_message_with_animation(
+        BOT_TOKEN,
+        user_id,
+        SERENDIP_PITCH_MARKDOWN + "\n\n" + serendip_gate_markdown(),
+        SERENDIP_WELCOME_ANIM,
+        "serendip_welcome",
+        None,
+    )
 
 
 async def handle_apply_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

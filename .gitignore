@@ -245,3 +245,6 @@ tmp/
 
 # Git worktrees (local isolation)
 .worktrees/
+
+# Cached Telegram file_ids for onboarding animations
+.onboarding_animation_file_ids.json

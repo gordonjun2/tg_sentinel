@@ -3,7 +3,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from rich_messages import send_animation, send_rich_message
+from rich_messages import (
+    send_animation,
+    send_rich_message,
+    send_rich_message_with_animation,
+)
 
 
 @pytest.mark.asyncio
@@ -99,3 +103,47 @@ async def test_send_animation_missing_file():
             chat_id=7,
             animation_path="/tmp/does-not-exist-serendip.gif",
         )
+
+
+@pytest.mark.asyncio
+async def test_send_rich_message_with_animation_upload(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "rich_messages._FILE_ID_CACHE_PATH", tmp_path / "cache.json"
+    )
+    monkeypatch.setattr("rich_messages._file_id_cache", {})
+    monkeypatch.setattr("rich_messages._file_id_cache_loaded", False)
+
+    mp4 = tmp_path / "hero.mp4"
+    mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    session = MagicMock()
+    session.post.return_value = MagicMock(
+        status_code=200,
+        text='{"ok":true,"result":{"message_id":3,"animation":{"file_id":"anim123"}}}',
+        json=lambda: {
+            "ok": True,
+            "result": {
+                "message_id": 3,
+                "animation": {"file_id": "anim123"},
+            },
+        },
+    )
+    result = await send_rich_message_with_animation(
+        bot_token="tok",
+        chat_id=9,
+        markdown="# SISC",
+        animation_path=mp4,
+        media_id="sisc_hero",
+        reply_markup=None,
+        session=session,
+    )
+    assert result["message_id"] == 3
+    url = session.post.call_args.args[0]
+    assert url.endswith("/sendRichMessage")
+    data = session.post.call_args.kwargs["data"]
+    assert data["chat_id"] == "9"
+    assert "sisc_hero" in session.post.call_args.kwargs["files"]
+    rich = __import__("json").loads(data["rich_message"])
+    assert rich["markdown"].startswith("![](tg://video?id=sisc_hero)")
+    assert "# SISC" in rich["markdown"]
+    assert rich["media"][0]["media"]["type"] == "animation"
+    assert rich["media"][0]["media"]["media"] == "attach://sisc_hero"

@@ -5,6 +5,7 @@ INTRO_MARKDOWN = """# SISC
 *We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.*
 
 To keep this circle intentional, we ask a few quick questions before letting you in.
+
 🧠 It won't take long — just helps us make sure the right people are in the room.
 
 🌐 [Learn more about us](https://www.sisc.club/)
