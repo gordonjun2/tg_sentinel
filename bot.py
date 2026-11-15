@@ -56,13 +56,17 @@ from onboarding_copy import (
     INTRO_MARKDOWN,
     SERENDIP_PITCH_MARKDOWN,
     approved_invite_markdown,
+    approved_resume_markdown,
     member_followup_markdown,
     pending_approval_markdown,
     rejection_markdown,
     serendip_gate_markdown,
     serendip_member_followup_markdown,
+    survey_buttons_only_prefix,
     survey_complete_markdown,
+    survey_in_progress_markdown,
     survey_question_markdown,
+    survey_text_only_prefix,
 )
 from onboarding_media import (
     SERENDIP_WELCOME_ANIM,
@@ -77,6 +81,42 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 APPLY_JOIN_CALLBACK = "apply_join"
+
+
+def sisc_source_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🌐 SISC Website", callback_data="SISC Website"),
+                InlineKeyboardButton("📰 Newsletter", callback_data="Newsletter"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📍 Physical Event", callback_data="Physical Event"
+                ),
+                InlineKeyboardButton("🤝 Referral", callback_data="Referral"),
+            ],
+        ]
+    )
+
+
+def admin_approval_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✅ Approve (Main)", callback_data=f"approve_main_{user_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "✅ Approve (Sub)", callback_data=f"approve_sub_{user_id}"
+                )
+            ],
+            [InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")],
+        ]
+    )
+
 
 # Initialize transcriber
 transcriber = AudioTranscriber()
@@ -120,15 +160,9 @@ def apply_ineligible_status_markdown(state: UserState) -> str:
     if branch == "pending":
         return pending_approval_markdown()
     if branch == "approved_invite":
-        return (
-            "## You are approved\n\n"
-            "Send /start to get your one-time invite link."
-        )
+        return approved_resume_markdown()
     if branch == "in_survey":
-        return (
-            "## Application in progress\n\n"
-            "Send /start to continue where you left off."
-        )
+        return survey_in_progress_markdown()
     raise ValueError(
         f"apply_ineligible_status_markdown called for eligible branch={branch!r} "
         f"state={state!r}"
@@ -368,15 +402,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     branch = resolve_start_branch(is_member=is_member, state=user_data.state)
 
-    if not is_member:
-        await send_animation(BOT_TOKEN, user_id, SISC_HERO_ANIM)
+    await send_animation(BOT_TOKEN, user_id, SISC_HERO_ANIM)
 
     if branch == "apply":
         apply_markup = InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        "Apply to join SISC", callback_data=APPLY_JOIN_CALLBACK
+                        "✨ Apply to join SISC", callback_data=APPLY_JOIN_CALLBACK
                     )
                 ]
             ]
@@ -394,7 +427,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         member_rows = []
         if group_link:
             member_rows.append(
-                [InlineKeyboardButton("Open SISC group", url=group_link)]
+                [InlineKeyboardButton("💬 Open SISC group", url=group_link)]
             )
         member_markup = (
             InlineKeyboardMarkup(member_rows) if member_rows else None
@@ -442,23 +475,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         question_text = SURVEY_QUESTIONS[question_index]
         reply_markup = None
         if question_text == "How do you know about SISC?":
-            sisc_markup = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "SISC Website", callback_data="SISC Website"
-                        ),
-                        InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            "Physical Event", callback_data="Physical Event"
-                        ),
-                        InlineKeyboardButton("Referral", callback_data="Referral"),
-                    ],
-                ]
-            )
-            reply_markup = sisc_markup.to_dict()
+            reply_markup = sisc_source_keyboard().to_dict()
         await send_rich_message(
             BOT_TOKEN,
             user_id,
@@ -512,13 +529,13 @@ async def serendip_command(
         rows = [
             [
                 InlineKeyboardButton(
-                    "Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
+                    "🚀 Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
                 )
             ]
         ]
         if group_link:
             rows.append(
-                [InlineKeyboardButton("Open SISC group", url=group_link)]
+                [InlineKeyboardButton("💬 Open SISC group", url=group_link)]
             )
         await send_rich_message(
             BOT_TOKEN,
@@ -568,24 +585,6 @@ async def handle_survey_response(
     sisc_source_question = "How do you know about SISC?"
     is_sisc_source = SURVEY_QUESTIONS[user_data.current_question] == sisc_source_question
 
-    def sisc_source_keyboard() -> InlineKeyboardMarkup:
-        return InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "SISC Website", callback_data="SISC Website"
-                    ),
-                    InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
-                ],
-                [
-                    InlineKeyboardButton(
-                        "Physical Event", callback_data="Physical Event"
-                    ),
-                    InlineKeyboardButton("Referral", callback_data="Referral"),
-                ],
-            ]
-        )
-
     # Check if the message is text
     if not update.message.text:
         if is_sisc_source:
@@ -593,7 +592,7 @@ async def handle_survey_response(
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
-                "Please select an option from the buttons below.\n\n"
+                survey_buttons_only_prefix()
                 + survey_question_markdown(
                     user_data.current_question,
                     len(SURVEY_QUESTIONS),
@@ -606,7 +605,7 @@ async def handle_survey_response(
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
-                "Please send your answer as text only. Images, audio, or other media are not accepted.\n\n"
+                survey_text_only_prefix()
                 + survey_question_markdown(
                     user_data.current_question,
                     len(SURVEY_QUESTIONS),
@@ -622,7 +621,7 @@ async def handle_survey_response(
         await send_rich_message(
             BOT_TOKEN,
             user_id,
-            "Please select an option from the buttons below.\n\n"
+            survey_buttons_only_prefix()
             + survey_question_markdown(
                 user_data.current_question,
                 len(SURVEY_QUESTIONS),
@@ -663,28 +662,13 @@ async def handle_survey_response(
 
         survey_answers = "\n".join(answers_text)
 
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "Approve (Main)", callback_data=f"approve_main_{user_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "Approve (Sub)", callback_data=f"approve_sub_{user_id}"
-                )
-            ],
-            [InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
         await context.bot.send_message(
             chat_id=ADMIN_GROUP_ID,
             text=(
                 f"New join request from {user_data.username or user_id}:\n\n"
                 f"{survey_answers}"
             ),
-            reply_markup=reply_markup,
+            reply_markup=admin_approval_keyboard(user_id),
         )
     else:
         # Check if the next question is "How do you know about SISC?"
@@ -692,20 +676,7 @@ async def handle_survey_response(
             SURVEY_QUESTIONS[user_data.current_question]
             == "How do you know about SISC?"
         ):
-            # Show inline keyboard with options
-            keyboard = [
-                [
-                    InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
-                    InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
-                ],
-                [
-                    InlineKeyboardButton(
-                        "Physical Event", callback_data="Physical Event"
-                    ),
-                    InlineKeyboardButton("Referral", callback_data="Referral"),
-                ],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = sisc_source_keyboard()
 
             db.update_user(user_data)
             await send_rich_message(
@@ -766,7 +737,7 @@ async def handle_survey_option_selection(
         await send_rich_message(
             BOT_TOKEN,
             user_id,
-            "You selected: Referral\n\n"
+            "*You selected:* ==Referral==\n\n"
             + survey_question_markdown(
                 user_data.current_question,
                 len(SURVEY_QUESTIONS),
@@ -777,7 +748,7 @@ async def handle_survey_option_selection(
         await send_rich_message(
             BOT_TOKEN,
             user_id,
-            f"You selected: **{selected_option}**",
+            f"*You selected:* =={selected_option}==",
         )
 
         # Move to the question after "Who is your referral?"
@@ -809,28 +780,13 @@ async def handle_survey_option_selection(
 
             survey_answers = "\n".join(answers_text)
 
-            keyboard = [
-                [
-                    InlineKeyboardButton(
-                        "Approve (Main)", callback_data=f"approve_main_{user_id}"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "Approve (Sub)", callback_data=f"approve_sub_{user_id}"
-                    )
-                ],
-                [InlineKeyboardButton("Reject", callback_data=f"reject_{user_id}")],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
             await context.bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
                 text=(
                     f"New join request from {user_data.username or user_id}:\n\n"
                     f"{survey_answers}"
                 ),
-                reply_markup=reply_markup,
+                reply_markup=admin_approval_keyboard(user_id),
             )
 
 
