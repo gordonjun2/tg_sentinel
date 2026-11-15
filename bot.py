@@ -67,14 +67,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-INTRO_TEXT = (
-    "👋 Welcome to the *Super-Individual Secret Club*!\n"
-    " We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.\n\n"
-    "To keep this circle intentional, we ask a few quick questions before letting you in.\n"
-    "🧠 It won't take long — just helps us make sure the right people are in the room.\n\n"
-    "🌐 Learn more about us: https://www.sisc.club/"
-)
-
 APPLY_JOIN_CALLBACK = "apply_join"
 
 # Initialize transcriber
@@ -461,33 +453,59 @@ async def handle_survey_response(
     if not user_data or user_data.state != UserState.IN_SURVEY:
         return
 
+    sisc_source_question = "How do you know about SISC?"
+    is_sisc_source = SURVEY_QUESTIONS[user_data.current_question] == sisc_source_question
+
+    def sisc_source_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "SISC Website", callback_data="SISC Website"
+                    ),
+                    InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "Physical Event", callback_data="Physical Event"
+                    ),
+                    InlineKeyboardButton("Referral", callback_data="Referral"),
+                ],
+            ]
+        )
+
     # Check if the message is text
     if not update.message.text:
-        await send_rich_message(
-            BOT_TOKEN,
-            user_id,
-            "Please send your answer as text only. Images, audio, or other media are not accepted.\n\n"
-            + survey_question_markdown(
-                user_data.current_question,
-                len(SURVEY_QUESTIONS),
-                SURVEY_QUESTIONS[user_data.current_question],
-            ),
-        )
+        if is_sisc_source:
+            reply_markup = sisc_source_keyboard()
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                "Please select an option from the buttons below.\n\n"
+                + survey_question_markdown(
+                    user_data.current_question,
+                    len(SURVEY_QUESTIONS),
+                    SURVEY_QUESTIONS[user_data.current_question],
+                    text_reply_hint=False,
+                ),
+                reply_markup=reply_markup.to_dict(),
+            )
+        else:
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                "Please send your answer as text only. Images, audio, or other media are not accepted.\n\n"
+                + survey_question_markdown(
+                    user_data.current_question,
+                    len(SURVEY_QUESTIONS),
+                    SURVEY_QUESTIONS[user_data.current_question],
+                ),
+            )
         return
 
     # Check if current question is "How do you know about SISC?" - user should use buttons
-    if SURVEY_QUESTIONS[user_data.current_question] == "How do you know about SISC?":
-        keyboard = [
-            [
-                InlineKeyboardButton("SISC Website", callback_data="SISC Website"),
-                InlineKeyboardButton("Newsletter", callback_data="Newsletter"),
-            ],
-            [
-                InlineKeyboardButton("Physical Event", callback_data="Physical Event"),
-                InlineKeyboardButton("Referral", callback_data="Referral"),
-            ],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+    if is_sisc_source:
+        reply_markup = sisc_source_keyboard()
 
         await send_rich_message(
             BOT_TOKEN,
@@ -1031,20 +1049,22 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         help_text = """
 *Available Commands*
 
-/start - Start the join process
-• Complete the join survey
-• Get your invite link (if approved)
-• Check your request status
+/start - Open SISC + Serendip intro
+• Apply to join SISC (survey starts after you tap Apply)
+• Check pending / rejected status
+• Members: Launch Serendip Mini App + Open group
 
 /help - Show this help message with command list
 
 *How to Join*
-1. Use /start to begin the process
-2. Answer all survey questions
-3. Wait for admin approval
-4. Once approved, you'll receive an invite link
+1. Use /start to see the intro
+2. Tap *Apply to join SISC* to start the survey
+3. Answer all survey questions
+4. Wait for admin approval
+5. Once approved, you'll receive an invite link
+6. After you join the group, /start again to open Serendip
 
-Note: Each invite link can only be used once and expires after use.
+Note: Each invite link can only be used once and expires after use. Serendip requires SISC access first.
 """
     elif update.effective_chat.id == ADMIN_GROUP_ID:
         help_text = """
