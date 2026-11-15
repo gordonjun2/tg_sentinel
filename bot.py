@@ -21,6 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ChatMemberHandler,
     ContextTypes,
+    TypeHandler,
     filters,
 )
 from telegram.constants import ParseMode
@@ -77,6 +78,11 @@ from onboarding_media import (
     SERENDIP_WELCOME_ANIM,
     SISC_WELCOME_ANIM,
     require_onboarding_gifs,
+)
+from serendip_update_forwarder import (
+    attach_forward_client,
+    close_forward_client,
+    forward_update_to_serendip,
 )
 
 # Enable logging
@@ -2168,13 +2174,24 @@ def main() -> None:
                 None,
             )
         )
+        await attach_forward_client(app)
+
+    async def post_shutdown(app: Application) -> None:
+        await close_forward_client(app)
 
     # Add post init callback
     application.post_init = post_init
+    application.post_shutdown = post_shutdown
 
     # Create command filters
     private_chat_filter = filters.ChatType.PRIVATE
     admin_group_filter = filters.Chat(chat_id=ADMIN_GROUP_ID)
+
+    # Fan-out every update to serendip after local handlers (shared bot token).
+    application.add_handler(
+        TypeHandler(Update, forward_update_to_serendip),
+        group=99,
+    )
 
     # Add handlers with appropriate filters
     application.add_handler(CommandHandler("start", start, filters=private_chat_filter))

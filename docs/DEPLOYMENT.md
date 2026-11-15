@@ -45,6 +45,18 @@ systemctl status tg-sentinel-bot tg-sentinel-partner
 
 5. Confirm `.env` and `partner_message_summarisation/data/sentinel_listener.session` are present (gitignored). Apps load `.env` via python-dotenv; the units do not use systemd `EnvironmentFile`.
 
+6. Shared Serendip bot (same `BOT_TOKEN` as serendip-tg production): set both
+   forward vars so polling can fan updates into serendip without `setWebhook`:
+
+```bash
+# in /root/tg_sentinel/.env
+SERENDIP_UPDATE_FORWARD_URL=https://api.sisc.club/bot/webhook
+SERENDIP_UPDATE_FORWARD_SECRET=<same as serendip TELEGRAM_WEBHOOK_SECRET>
+```
+
+Confirm webhook is empty (`getWebhookInfo` → `"url": ""`). If a webhook is
+set, `getUpdates` conflicts and the bot loop errors.
+
 ---
 
 ## Step 2 — Connect GitHub Actions to the VPS

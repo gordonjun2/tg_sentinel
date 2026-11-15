@@ -44,6 +44,18 @@ def require_mini_app_url(raw: str | None) -> str:
 
 MINI_APP_URL = require_mini_app_url(os.getenv("MINI_APP_URL"))
 
+# Optional fan-out to serendip-tg (shared bot: this process polls, serendip does not setWebhook).
+# Both must be set, or both unset.
+_SERENDIP_FORWARD_URL_RAW = (os.getenv("SERENDIP_UPDATE_FORWARD_URL") or "").strip()
+_SERENDIP_FORWARD_SECRET_RAW = (os.getenv("SERENDIP_UPDATE_FORWARD_SECRET") or "").strip()
+if bool(_SERENDIP_FORWARD_URL_RAW) != bool(_SERENDIP_FORWARD_SECRET_RAW):
+    raise ValueError(
+        "SERENDIP_UPDATE_FORWARD_URL and SERENDIP_UPDATE_FORWARD_SECRET "
+        "must both be set or both unset"
+    )
+SERENDIP_UPDATE_FORWARD_URL = _SERENDIP_FORWARD_URL_RAW
+SERENDIP_UPDATE_FORWARD_SECRET = _SERENDIP_FORWARD_SECRET_RAW
+
 GOOGLE_DRIVE_MAIN_FOLDER_ID = os.getenv("GOOGLE_DRIVE_MAIN_FOLDER_ID")
 if not GOOGLE_DRIVE_MAIN_FOLDER_ID:
     raise ValueError("GOOGLE_DRIVE_MAIN_FOLDER_ID not found in environment variables")
