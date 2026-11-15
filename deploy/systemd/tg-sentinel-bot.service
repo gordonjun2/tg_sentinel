@@ -1,0 +1,18 @@
+[Unit]
+Description=tg_sentinel main Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/tg_sentinel
+ExecStart=/root/tg_sentinel/venv/bin/python bot.py
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+StandardOutput=append:/root/tg_sentinel/script_tg_sentinel_output.log
+StandardError=append:/root/tg_sentinel/script_tg_sentinel_output.log
+
+[Install]
+WantedBy=multi-user.target

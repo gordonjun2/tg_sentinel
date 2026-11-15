@@ -54,34 +54,31 @@ All vars live in the root `.env` (see `.env.example`): `DATABASE_URL`
 
 ### 4. Deploy (VPS)
 
-This service is started together with the main bot by the idempotent orchestrator:
+This service is owned by the systemd unit `tg-sentinel-partner` (see root [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md)). Install units once, then:
 
 ```bash
-bash start_all.sh    # main bot + this service; skips anything already running
+bash start_all.sh                              # systemctl start main bot + this service
+systemctl restart tg-sentinel-partner          # restart just this service
+bash scripts/deploy.sh --restart               # CD sync + clean stop/start both units
 # logs: tail -f /root/tg_sentinel/partner_message_summarisation_output.log
 ```
 
-- **Restart just this service**: `kill <pid>` then `bash partner_message_summarisation/partner_message_summarisation_bot.sh`
-- **Restart the whole stack**: `kill <pids>` then `bash start_all.sh` — running services are skipped, killed ones restart
-- **Auto-start after VPS reboot** (optional): add to crontab (`crontab -e`):
-  ```
-  @reboot bash /root/tg_sentinel/start_all.sh
-  ```
-- `start_all.sh` warns (non-blocking) if the session file or `DATABASE_URL` is missing; the main bot is unaffected either way
-- gmail_calendar is on hold — kept in the repo but not started by `start_all.sh` (re-enable via the commented block there)
+- Do not nohup this process alongside the unit. Two processes cannot share `sentinel_listener.session`.
+- Reboot coverage: `systemctl enable tg-sentinel-partner` (no `@reboot start_all.sh`).
+- gmail_calendar remains on hold.
 
-The service is SIGTERM-safe: `kill <pid>` leaves any in-flight batch `pending` (never half-completed), and missed messages are recovered by the bounded catch-up on next start.
+The service is SIGTERM-safe: `systemctl stop` leaves any in-flight batch `pending` (never half-completed), and missed messages are recovered by the bounded catch-up on next start.
 
 ## Initial scrape (backfill)
 
 The service deliberately starts from "now" — first-ever chats do **not** import history. To seed the archive with recent group history, use the one-shot backfill (while the service is **stopped** — two processes can't share one Pyrogram session):
 
 ```bash
-kill <summarisation-pid>                                            # stop the service
+systemctl stop tg-sentinel-partner                                  # stop the service
 python -m partner_message_summarisation.backfill                    # newest 200 per group
 python -m partner_message_summarisation.backfill --limit 500        # more per group
 python -m partner_message_summarisation.backfill --chat "AI Builders"  # one group only
-bash start_all.sh                                                   # resume
+systemctl start tg-sentinel-partner                                 # resume
 ```
 
 Scraped messages are deduplicated (safe to re-run) and land as `completed` — history is presumed already seen, so it never feeds a digest; new live messages are archived as `pending` by the service as usual.
@@ -117,5 +114,4 @@ integration tests need `PARTNER_MESSAGE_SUMMARISATION_TEST_DATABASE_URL`).
 ## Post-v1 backlog
 
 - `/run_digest` admin command in the main bot
-- systemd unit replacing the nohup script
 - prompt tuning from the first real digests

@@ -14,6 +14,8 @@ _DUMMY_REQUIRED = {
     "BOT_TOKEN": "test-token",
     "ADMIN_GROUP_ID": "-1000000001",
     "TARGET_GROUP_ID": "-1000000002",
+    "TARGET_SUB_GROUP_ID": "-1000000003",
+    "MINI_APP_URL": "https://serendip.example.test",
     "GOOGLE_DRIVE_MAIN_FOLDER_ID": "folder",
     "GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID": "folder",
     "GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID": "folder",

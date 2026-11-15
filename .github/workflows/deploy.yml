@@ -1,0 +1,41 @@
+name: Deploy
+
+# Deploy is manual only. Pushing to main runs CI (ci.yml) but never deploys.
+# Actions → Deploy → Run workflow. Check restart_long_running only when
+# bot or partner-listener code must reload into memory.
+on:
+  workflow_dispatch:
+    inputs:
+      restart_long_running:
+        description: "Stop systemd units cleanly, then start after sync (main bot + partner listener)"
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          RESTART: ${{ inputs.restart_long_running }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: RESTART
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.SERVER_PROJECT_DIR }}
+            if [ "$RESTART" = "true" ]; then
+              bash scripts/deploy.sh --restart
+            else
+              bash scripts/deploy.sh
+            fi

@@ -1,0 +1,18 @@
+[Unit]
+Description=tg_sentinel partner message summarisation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/tg_sentinel
+ExecStart=/root/tg_sentinel/venv/bin/python -m partner_message_summarisation.bot
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+StandardOutput=append:/root/tg_sentinel/partner_message_summarisation_output.log
+StandardError=append:/root/tg_sentinel/partner_message_summarisation_output.log
+
+[Install]
+WantedBy=multi-user.target

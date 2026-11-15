@@ -52,18 +52,19 @@ idempotent orchestrator.
 
 ## Running
 
+Long-running services are owned by **systemd** (`tg-sentinel-bot`, `tg-sentinel-partner`). See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for one-time unit install, GitHub Actions CD, and the optional restart checkbox.
+
 ```bash
-bash start_all.sh    # starts everything; safe to re-run (skips running services)
+bash start_all.sh                 # systemctl start both units (safe to re-run)
+bash scripts/deploy.sh            # git sync + pip (no bot restart)
+bash scripts/deploy.sh --restart  # sync + pip + clean systemctl stop/start
 ```
 
-- Re-running never double-spawns: each service is guarded by `pgrep`.
-- **Restart flow**: `kill <pid>` (SIGTERM-safe), then `bash start_all.sh` again — killed services come back, running ones are untouched.
-- Per-service scripts for solo restarts: `bot_script.sh` (main bot),
-  `partner_message_summarisation/partner_message_summarisation_bot.sh`,
-  `gmail_calendar/gmail_calendar_bot.sh` (gmail — on hold), `luma_reminder.sh` (cron job).
-- Auto-start after a VPS reboot (optional): add `@reboot bash /root/tg_sentinel/start_all.sh`
-  to `crontab -e`. The repo is expected at `/root/tg_sentinel` on the server.
-- Logs: `<service>_output.log` / `script_tg_sentinel_output.log` in the project root.
+- **Restart**: `systemctl restart tg-sentinel-bot` and/or `tg-sentinel-partner`, or Deploy with **restart_long_running**.
+- Solo start wrappers: `bot_script.sh`, `partner_message_summarisation/partner_message_summarisation_bot.sh`.
+- Cron only: `luma_reminder.sh`, `linkedin_forwarder.sh`. Gmail calendar remains on hold.
+- Do not run nohup alongside the units. Dual starters fight Pyrogram session files.
+- Logs: `script_tg_sentinel_output.log`, `partner_message_summarisation_output.log` in the project root.
 
 ## Usage
 
@@ -98,9 +99,12 @@ partner_message_summarisation/   Group listener + nightly digest service (see it
 gmail_calendar/             Gmail + Calendar service (on hold)
 luma_reminder.py            Luma event reminder (cron)
 luma_scraper.py             Luma event date scraper (utility)
-start_all.sh                Idempotent orchestrator for long-running services
+start_all.sh                systemctl start wrapper for both long-running units
+scripts/deploy.sh           VPS git sync + pip (+ optional systemd restart)
+deploy/systemd/             Unit files for main bot and partner summarisation
+docs/DEPLOYMENT.md          CI/CD and one-time systemd install
 check_api_keys.py           API key health check (free endpoints, zero cost)
-bot_script.sh               Main bot standalone launcher
+bot_script.sh               systemctl start wrapper for the main bot
 openspec/                   Capability specs + archived change history
 TELEGRAM_INTELLIGENCE_PIPELINE_PLAN.md   Design notes for the summarisation pipeline
 ```
