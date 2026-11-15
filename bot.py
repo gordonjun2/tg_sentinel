@@ -4,6 +4,7 @@ import json
 import random
 import sys
 from io import StringIO
+from typing import Optional
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -83,6 +84,41 @@ def resolve_start_branch(*, is_member: bool, state: UserState) -> str:
     if state == UserState.IN_SURVEY:
         return "in_survey"
     return "apply"
+
+
+def begin_apply_survey(user_data: UserData) -> Optional[UserData]:
+    """Start the join survey if the user is eligible for Apply.
+
+    Eligible when resolve_start_branch(is_member=False, state=...) == "apply"
+    (IDLE / REJECTED). Mutates and returns user_data on success; returns None
+    when already pending, approved, or in_survey so callers do not wipe state.
+    """
+    if resolve_start_branch(is_member=False, state=user_data.state) != "apply":
+        return None
+    user_data.state = UserState.IN_SURVEY
+    user_data.current_question = 0
+    user_data.answers = {}
+    return user_data
+
+
+def apply_ineligible_status_markdown(state: UserState) -> str:
+    branch = resolve_start_branch(is_member=False, state=state)
+    if branch == "pending":
+        return pending_approval_markdown()
+    if branch == "approved_invite":
+        return (
+            "## You are approved\n\n"
+            "Send /start to get your one-time invite link."
+        )
+    if branch == "in_survey":
+        return (
+            "## Application in progress\n\n"
+            "Send /start to continue where you left off."
+        )
+    raise ValueError(
+        f"apply_ineligible_status_markdown called for eligible branch={branch!r} "
+        f"state={state!r}"
+    )
 
 
 # [Pyrogram] Monkey Patch
@@ -338,16 +374,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_rich_message(BOT_TOKEN, user_id, INTRO_MARKDOWN)
 
     if branch == "member":
-        member_markup = InlineKeyboardMarkup(
+        member_rows = [
             [
-                [
-                    InlineKeyboardButton(
-                        "Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
-                    )
-                ],
-                [InlineKeyboardButton("Open SISC group", url=group_link)],
+                InlineKeyboardButton(
+                    "Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
+                )
             ]
-        )
+        ]
+        if group_link:
+            member_rows.append(
+                [InlineKeyboardButton("Open SISC group", url=group_link)]
+            )
+        member_markup = InlineKeyboardMarkup(member_rows)
         await send_rich_message(
             BOT_TOKEN,
             user_id,
@@ -432,10 +470,15 @@ async def handle_apply_join(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     username = update.effective_user.username
     user_data = db.get_user(user_id) or db.create_user(user_id, username)
-    user_data.state = UserState.IN_SURVEY
-    user_data.current_question = 0
-    user_data.answers = {}
-    db.update_user(user_data)
+    started = begin_apply_survey(user_data)
+    if started is None:
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            apply_ineligible_status_markdown(user_data.state),
+        )
+        return
+    db.update_user(started)
     await send_rich_message(
         BOT_TOKEN,
         user_id,
