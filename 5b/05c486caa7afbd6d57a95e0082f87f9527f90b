@@ -1,0 +1,27 @@
+onboarding_copy.py
+  s_3e3181d6cc271c::t_bae15357c2a403 16
+docs/superpowers/specs/2026-11-15-sisc-serendip-start-onboarding-design.md
+  s_3e3181d6cc271c::t_a0e71c7edd345e 70
+  s_3e3181d6cc271c::t_2123b4c321918f 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b05c486caa7afbd6d57a95e0082f87f9527f90b",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_3e3181d6cc271c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "34043047-7883-48d1-a453-ab58d51c729a",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
