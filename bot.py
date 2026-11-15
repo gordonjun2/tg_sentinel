@@ -56,6 +56,7 @@ from onboarding_copy import (
     approved_invite_markdown,
     member_followup_markdown,
     pending_approval_markdown,
+    survey_complete_markdown,
     survey_question_markdown,
 )
 
@@ -458,9 +459,15 @@ async def handle_survey_response(
 
     # Check if the message is text
     if not update.message.text:
-        await update.message.reply_text(
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
             "Please send your answer as text only. Images, audio, or other media are not accepted.\n\n"
-            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}"
+            + survey_question_markdown(
+                user_data.current_question,
+                len(SURVEY_QUESTIONS),
+                SURVEY_QUESTIONS[user_data.current_question],
+            ),
         )
         return
 
@@ -478,10 +485,16 @@ async def handle_survey_response(
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(
-            f"Please select an option from the buttons below:\n\n"
-            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
-            reply_markup=reply_markup,
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            "Please select an option from the buttons below.\n\n"
+            + survey_question_markdown(
+                user_data.current_question,
+                len(SURVEY_QUESTIONS),
+                SURVEY_QUESTIONS[user_data.current_question],
+            ),
+            reply_markup=reply_markup.to_dict(),
         )
         return
 
@@ -496,8 +509,10 @@ async def handle_survey_response(
         db.update_user(user_data)
 
         # Notify user
-        await update.message.reply_text(
-            "Thank you for completing the survey! Your request has been sent to the admins for review."
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            survey_complete_markdown(),
         )
 
         # Notify admin group
@@ -558,16 +573,27 @@ async def handle_survey_response(
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             db.update_user(user_data)
-            await update.message.reply_text(
-                f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}",
-                reply_markup=reply_markup,
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                survey_question_markdown(
+                    user_data.current_question,
+                    len(SURVEY_QUESTIONS),
+                    SURVEY_QUESTIONS[user_data.current_question],
+                ),
+                reply_markup=reply_markup.to_dict(),
             )
         else:
             # Ask next question normally
             db.update_user(user_data)
-            await update.message.reply_text(
-                f"Question {user_data.current_question + 1}: "
-                f"{SURVEY_QUESTIONS[user_data.current_question]}"
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                survey_question_markdown(
+                    user_data.current_question,
+                    len(SURVEY_QUESTIONS),
+                    SURVEY_QUESTIONS[user_data.current_question],
+                ),
             )
 
 
@@ -601,14 +627,22 @@ async def handle_survey_option_selection(
     if selected_option == "Referral":
         # Show confirmation and ask the referral question (without back button)
         db.update_user(user_data)
-        # Send new message without keyboard
-        await query.message.reply_text(
-            f"You selected: Referral\n\n"
-            f"Question {user_data.current_question + 1}: {SURVEY_QUESTIONS[user_data.current_question]}"
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            "You selected: Referral\n\n"
+            + survey_question_markdown(
+                user_data.current_question,
+                len(SURVEY_QUESTIONS),
+                SURVEY_QUESTIONS[user_data.current_question],
+            ),
         )
     else:
-        # Send new message with confirmation
-        await query.message.reply_text(f"You selected: {selected_option}")
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            f"You selected: **{selected_option}**",
+        )
 
         # Move to the question after "Who is your referral?"
         user_data.current_question += 1
@@ -620,8 +654,10 @@ async def handle_survey_option_selection(
             db.update_user(user_data)
 
             # Send completion message
-            await query.message.reply_text(
-                "Thank you for completing the survey! Your request has been sent to the admins for review."
+            await send_rich_message(
+                BOT_TOKEN,
+                user_id,
+                survey_complete_markdown(),
             )
 
             # Notify admin group
