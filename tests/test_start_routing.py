@@ -20,7 +20,7 @@ for _key, _value in _REQUIRED_ENV.items():
     os.environ.setdefault(_key, _value)
 
 from database import UserData, UserState
-from bot import begin_apply_survey, resolve_start_branch
+from bot import begin_apply_survey, resolve_serendip_branch, resolve_start_branch
 from onboarding_copy import survey_question_markdown
 from config import SURVEY_QUESTIONS
 
@@ -106,3 +106,8 @@ def test_begin_apply_survey_approved_does_not_reset():
     assert user.state == UserState.APPROVED
     assert user.current_question == 4
     assert user.answers == {"0": "done"}
+
+
+def test_resolve_serendip_branch():
+    assert resolve_serendip_branch(is_member=True) == "member"
+    assert resolve_serendip_branch(is_member=False) == "gate"

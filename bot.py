@@ -91,6 +91,12 @@ def resolve_start_branch(*, is_member: bool, state: UserState) -> str:
     return "apply"
 
 
+def resolve_serendip_branch(*, is_member: bool) -> str:
+    if is_member:
+        return "member"
+    return "gate"
+
+
 def begin_apply_survey(user_data: UserData) -> Optional[UserData]:
     """Start the join survey if the user is eligible for Apply.
 
