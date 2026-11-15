@@ -54,10 +54,13 @@ from ai_enrichment import process_enrichment, buffer, admin_buffer
 from rich_messages import send_animation, send_rich_message
 from onboarding_copy import (
     INTRO_MARKDOWN,
+    SERENDIP_PITCH_MARKDOWN,
     approved_invite_markdown,
     member_followup_markdown,
     pending_approval_markdown,
     rejection_markdown,
+    serendip_gate_markdown,
+    serendip_member_followup_markdown,
     survey_complete_markdown,
     survey_question_markdown,
 )
@@ -388,23 +391,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_rich_message(BOT_TOKEN, user_id, INTRO_MARKDOWN)
 
     if branch == "member":
-        member_rows = [
-            [
-                InlineKeyboardButton(
-                    "Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
-                )
-            ]
-        ]
+        member_rows = []
         if group_link:
             member_rows.append(
                 [InlineKeyboardButton("Open SISC group", url=group_link)]
             )
-        member_markup = InlineKeyboardMarkup(member_rows)
+        member_markup = (
+            InlineKeyboardMarkup(member_rows) if member_rows else None
+        )
         await send_rich_message(
             BOT_TOKEN,
             user_id,
             member_followup_markdown(),
-            reply_markup=member_markup.to_dict(),
+            reply_markup=member_markup.to_dict() if member_markup else None,
         )
         return
 
@@ -474,6 +473,62 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # apply: intro already sent with Apply keyboard; do not set IN_SURVEY here
+
+
+async def serendip_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Unlisted dogfood entry: Serendip pitch + Launch for SISC members."""
+    if update.effective_chat.type != "private":
+        return
+
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+
+    user_data = db.get_user(user_id)
+    if not user_data:
+        user_data = db.create_user(user_id, username)
+
+    is_member = False
+    group_link = None
+    try:
+        member = await context.bot.get_chat_member(TARGET_GROUP_ID, user_id)
+        if member.status not in ["left", "kicked", "banned"]:
+            is_member = True
+            chat = await context.bot.get_chat(TARGET_GROUP_ID)
+            if chat.username:
+                group_link = f"https://t.me/{chat.username}"
+            else:
+                group_link = chat.invite_link
+    except Exception:
+        pass
+
+    branch = resolve_serendip_branch(is_member=is_member)
+
+    await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_ANIM)
+    await send_rich_message(BOT_TOKEN, user_id, SERENDIP_PITCH_MARKDOWN)
+
+    if branch == "member":
+        rows = [
+            [
+                InlineKeyboardButton(
+                    "Launch Serendip", web_app=WebAppInfo(url=MINI_APP_URL)
+                )
+            ]
+        ]
+        if group_link:
+            rows.append(
+                [InlineKeyboardButton("Open SISC group", url=group_link)]
+            )
+        await send_rich_message(
+            BOT_TOKEN,
+            user_id,
+            serendip_member_followup_markdown(),
+            reply_markup=InlineKeyboardMarkup(rows).to_dict(),
+        )
+        return
+
+    await send_rich_message(BOT_TOKEN, user_id, serendip_gate_markdown())
 
 
 async def handle_apply_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -825,7 +880,6 @@ async def handle_admin_decision(
             )
 
             # Notify user with new link
-            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_ANIM)
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
@@ -880,7 +934,6 @@ async def handle_admin_decision(
             db.update_user(user_data)
 
             # Notify user
-            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_ANIM)
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
@@ -1108,10 +1161,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         help_text = """
 *Available Commands*
 
-/start - Open SISC + Serendip intro
+/start - Open SISC intro
 • Apply to join SISC (survey starts after you tap Apply)
 • Check pending / rejected status
-• Members: Launch Serendip Mini App + Open group
+• Members: Open SISC group
 
 /help - Show this help message with command list
 
@@ -1121,9 +1174,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 3. Answer all survey questions
 4. Wait for admin approval
 5. Once approved, you'll receive an invite link
-6. After you join the group, /start again to open Serendip
+6. After you join the group, /start again for the group link
 
-Note: Each invite link can only be used once and expires after use. Serendip requires SISC access first.
+Note: Each invite link can only be used once and expires after use.
 """
     elif update.effective_chat.id == ADMIN_GROUP_ID:
         help_text = """
@@ -2084,6 +2137,11 @@ def main() -> None:
 
     # Add handlers with appropriate filters
     application.add_handler(CommandHandler("start", start, filters=private_chat_filter))
+    application.add_handler(
+        CommandHandler(
+            "serendip", serendip_command, filters=private_chat_filter
+        )
+    )
     application.add_handler(
         CommandHandler(
             "help", help_command, filters=private_chat_filter | admin_group_filter
