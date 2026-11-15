@@ -1,0 +1,35 @@
+rich_messages.py
+  s_3938415b4dbe22::t_cf1741b4bec8df 376,378-381,405-445,449-463
+  s_3938415b4dbe22::t_b37ba2211b438f 448
+  s_3938415b4dbe22::t_26bd57911378d1 383
+  s_3938415b4dbe22::t_dfda8367487d6c 446-447
+tests/test_rich_messages.py
+  s_3938415b4dbe22::t_49904caeac6711 12
+  s_3938415b4dbe22::t_1add7810eb366f 130,160-161,168,174-208
+scripts/build_onboarding_gifs.py
+  s_3938415b4dbe22::t_b8912e9eea8106 148-149,153-157
+onboarding_copy.py
+  s_3938415b4dbe22::t_61ed1d90c06f7c 14,16
+  s_3938415b4dbe22::t_8d1233cb60214e 85-87,92
+tests/test_onboarding_copy.py
+  s_3938415b4dbe22::t_d8d6ecc66da873 28,31-32,45-51
+bot.py
+  s_3938415b4dbe22::t_5561f31b771fbc 58
+  s_3938415b4dbe22::t_2cd55c451f7c30 2161-2170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae231bb71c588a9ad8e6d988850f4379b2615725",
+  "prompts": {},
+  "sessions": {
+    "s_3938415b4dbe22": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "feae54c3-ef36-490b-98bf-147f4cff589a",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
