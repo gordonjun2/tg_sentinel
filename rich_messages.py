@@ -9,18 +9,30 @@ import requests
 API_TMPL = "https://api.telegram.org/bot{token}/{method}"
 
 
+def _animation_content_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".gif":
+        return "image/gif"
+    if suffix in {".mp4", ".m4v"}:
+        return "video/mp4"
+    raise ValueError(
+        f"Unsupported animation type {suffix!r} for {path}; use .gif or .mp4"
+    )
+
+
 def _post_animation(
     bot_token: str,
     chat_id: int,
     animation_path: Path,
     session: requests.Session,
 ) -> dict[str, Any]:
+    content_type = _animation_content_type(animation_path)
     with animation_path.open("rb") as handle:
         resp = session.post(
             API_TMPL.format(token=bot_token, method="sendAnimation"),
             data={"chat_id": str(chat_id)},
             files={
-                "animation": (animation_path.name, handle, "image/gif"),
+                "animation": (animation_path.name, handle, content_type),
             },
             timeout=60,
         )

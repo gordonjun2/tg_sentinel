@@ -62,8 +62,8 @@ from onboarding_copy import (
     survey_question_markdown,
 )
 from onboarding_media import (
-    SERENDIP_WELCOME_GIF,
-    SISC_HERO_GIF,
+    SERENDIP_WELCOME_ANIM,
+    SISC_HERO_ANIM,
     require_onboarding_gifs,
 )
 
@@ -360,7 +360,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     branch = resolve_start_branch(is_member=is_member, state=user_data.state)
 
     if not is_member:
-        await send_animation(BOT_TOKEN, user_id, SISC_HERO_GIF)
+        await send_animation(BOT_TOKEN, user_id, SISC_HERO_ANIM)
 
     if branch == "apply":
         apply_markup = InlineKeyboardMarkup(
@@ -819,7 +819,7 @@ async def handle_admin_decision(
             )
 
             # Notify user with new link
-            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_GIF)
+            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_ANIM)
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,
@@ -874,7 +874,7 @@ async def handle_admin_decision(
             db.update_user(user_data)
 
             # Notify user
-            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_GIF)
+            await send_animation(BOT_TOKEN, user_id, SERENDIP_WELCOME_ANIM)
             await send_rich_message(
                 BOT_TOKEN,
                 user_id,

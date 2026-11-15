@@ -69,6 +69,26 @@ async def test_send_animation_payload(tmp_path: Path):
     assert url.endswith("/sendAnimation")
     assert session.post.call_args.kwargs["data"]["chat_id"] == "7"
     assert "animation" in session.post.call_args.kwargs["files"]
+    assert session.post.call_args.kwargs["files"]["animation"][2] == "image/gif"
+
+
+@pytest.mark.asyncio
+async def test_send_animation_mp4_content_type(tmp_path: Path):
+    mp4 = tmp_path / "clip.mp4"
+    mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    session = MagicMock()
+    session.post.return_value = MagicMock(
+        status_code=200,
+        text='{"ok":true,"result":{"message_id":10}}',
+        json=lambda: {"ok": True, "result": {"message_id": 10}},
+    )
+    await send_animation(
+        bot_token="tok",
+        chat_id=7,
+        animation_path=mp4,
+        session=session,
+    )
+    assert session.post.call_args.kwargs["files"]["animation"][2] == "video/mp4"
 
 
 @pytest.mark.asyncio
