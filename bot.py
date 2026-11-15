@@ -419,7 +419,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             BOT_TOKEN,
             user_id,
             survey_question_markdown(
-                question_index, len(SURVEY_QUESTIONS), question_text
+                question_index,
+                len(SURVEY_QUESTIONS),
+                question_text,
+                text_reply_hint=reply_markup is None,
             ),
             reply_markup=reply_markup,
         )
@@ -493,6 +496,7 @@ async def handle_survey_response(
                 user_data.current_question,
                 len(SURVEY_QUESTIONS),
                 SURVEY_QUESTIONS[user_data.current_question],
+                text_reply_hint=False,
             ),
             reply_markup=reply_markup.to_dict(),
         )
@@ -580,6 +584,7 @@ async def handle_survey_response(
                     user_data.current_question,
                     len(SURVEY_QUESTIONS),
                     SURVEY_QUESTIONS[user_data.current_question],
+                    text_reply_hint=False,
                 ),
                 reply_markup=reply_markup.to_dict(),
             )

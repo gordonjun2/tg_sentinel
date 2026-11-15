@@ -22,6 +22,15 @@ def test_survey_question_uses_one_based_of_total():
     assert "Reply with your answer as text." in text
 
 
+def test_survey_question_omits_text_hint_for_button_questions():
+    text = survey_question_markdown(
+        5, 8, "How do you know about SISC?", text_reply_hint=False
+    )
+    assert "How do you know about SISC?" in text
+    assert "Choose an option below." in text
+    assert "Reply with your answer as text." not in text
+
+
 def test_rejection_includes_reason():
     text = rejection_markdown("Not a fit right now")
     assert "Not a fit right now" in text

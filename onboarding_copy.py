@@ -19,13 +19,16 @@ Serendip helps you find people who matter inside Telegram, by intent, not by pro
 """
 
 
-def survey_question_markdown(index: int, total: int, question: str) -> str:
+def survey_question_markdown(
+    index: int, total: int, question: str, text_reply_hint: bool = True
+) -> str:
     # index is 0-based
-    return (
-        f"## Question {index + 1} of {total}\n\n"
-        f"{question}\n\n"
-        f"_Reply with your answer as text._"
+    hint = (
+        "_Reply with your answer as text._"
+        if text_reply_hint
+        else "_Choose an option below._"
     )
+    return f"## Question {index + 1} of {total}\n\n{question}\n\n{hint}"
 
 
 def survey_complete_markdown() -> str:
