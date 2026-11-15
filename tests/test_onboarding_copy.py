@@ -1,18 +1,43 @@
 from onboarding_copy import (
     INTRO_MARKDOWN,
+    SERENDIP_PITCH_MARKDOWN,
     approved_invite_markdown,
     member_followup_markdown,
     pending_approval_markdown,
     rejection_markdown,
+    serendip_gate_markdown,
+    serendip_member_followup_markdown,
     survey_complete_markdown,
     survey_question_markdown,
 )
 
 
-def test_intro_contains_serendip_sisc_access_and_club_link():
-    assert "Serendip" in INTRO_MARKDOWN
-    assert "SISC access" in INTRO_MARKDOWN
+def test_intro_is_sisc_only_no_serendip_product():
+    assert "SISC" in INTRO_MARKDOWN
     assert "sisc.club" in INTRO_MARKDOWN
+    assert "## Serendip" not in INTRO_MARKDOWN
+    assert "Mini App" not in INTRO_MARKDOWN
+    assert "SISC access first" not in INTRO_MARKDOWN
+
+
+def test_serendip_pitch_has_product_and_gate():
+    assert "## Serendip" in SERENDIP_PITCH_MARKDOWN
+    assert "Mini App" in SERENDIP_PITCH_MARKDOWN
+    assert "SISC" in SERENDIP_PITCH_MARKDOWN
+
+
+def test_public_status_copy_omits_serendip_cta():
+    assert "Serendip" not in survey_complete_markdown()
+    assert "Serendip" not in approved_invite_markdown("https://t.me/+x")
+    assert "Serendip" not in member_followup_markdown()
+    assert "Serendip" not in pending_approval_markdown()
+    assert "Serendip" not in rejection_markdown("Nope")
+
+
+def test_serendip_command_copy():
+    assert "join SISC" in serendip_gate_markdown().lower() or "SISC" in serendip_gate_markdown()
+    assert "/start" in serendip_gate_markdown()
+    assert "Serendip" in serendip_member_followup_markdown()
 
 
 def test_survey_question_uses_one_based_of_total():
