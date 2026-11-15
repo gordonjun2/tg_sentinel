@@ -402,7 +402,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_rich_message(
             BOT_TOKEN,
             user_id,
-            member_followup_markdown(),
+            member_followup_markdown(has_group_link=bool(group_link)),
             reply_markup=member_markup.to_dict() if member_markup else None,
         )
         return

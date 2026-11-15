@@ -29,7 +29,8 @@ def test_serendip_pitch_has_product_and_gate():
 def test_public_status_copy_omits_serendip_cta():
     assert "Serendip" not in survey_complete_markdown()
     assert "Serendip" not in approved_invite_markdown("https://t.me/+x")
-    assert "Serendip" not in member_followup_markdown()
+    assert "Serendip" not in member_followup_markdown(has_group_link=True)
+    assert "Serendip" not in member_followup_markdown(has_group_link=False)
     assert "Serendip" not in pending_approval_markdown()
     assert "Serendip" not in rejection_markdown("Nope")
 
@@ -65,7 +66,12 @@ def test_rejection_includes_reason():
 def test_survey_complete_and_pending_and_member_followup():
     assert "Application received" in survey_complete_markdown()
     assert "Pending review" in pending_approval_markdown()
-    assert "You are in" in member_followup_markdown()
+    with_link = member_followup_markdown(has_group_link=True)
+    without_link = member_followup_markdown(has_group_link=False)
+    assert "You are in" in with_link
+    assert "below" in with_link
+    assert "You are in" in without_link
+    assert "below" not in without_link
 
 
 def test_approved_invite_includes_link():

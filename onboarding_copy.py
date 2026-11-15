@@ -67,10 +67,15 @@ def rejection_markdown(reason: str) -> str:
     )
 
 
-def member_followup_markdown() -> str:
+def member_followup_markdown(*, has_group_link: bool) -> str:
+    if has_group_link:
+        return (
+            "## You are in\n\n"
+            "Open the SISC group below."
+        )
     return (
         "## You are in\n\n"
-        "Jump back to the SISC group below."
+        "You are already a member of the SISC group."
     )
 
 
