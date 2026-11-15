@@ -13,12 +13,12 @@ from onboarding_copy import (
 
 
 def test_intro_is_sisc_only_no_serendip_product():
-    assert "SISC" in INTRO_MARKDOWN
     assert "sisc.club" in INTRO_MARKDOWN
     assert "Super-Individual Secret Club" in INTRO_MARKDOWN
     assert "sharp minds" in INTRO_MARKDOWN
     assert "circle intentional" in INTRO_MARKDOWN
     assert "won't take long" in INTRO_MARKDOWN
+    assert not INTRO_MARKDOWN.lstrip().startswith("# ")
     assert "What we stand for" not in INTRO_MARKDOWN
     assert "## Serendip" not in INTRO_MARKDOWN
     assert "Mini App" not in INTRO_MARKDOWN

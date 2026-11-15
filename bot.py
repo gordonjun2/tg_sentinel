@@ -51,7 +51,11 @@ import os
 import time
 from pyrogram import Client, utils
 from ai_enrichment import process_enrichment, buffer, admin_buffer
-from rich_messages import send_rich_message, send_rich_message_with_animation
+from rich_messages import (
+    STREAM_CHUNK_DELAY_SECONDS,
+    stream_rich_message,
+    stream_rich_then_animation,
+)
 from onboarding_copy import (
     INTRO_MARKDOWN,
     SERENDIP_PITCH_MARKDOWN,
@@ -70,7 +74,7 @@ from onboarding_copy import (
 )
 from onboarding_media import (
     SERENDIP_WELCOME_ANIM,
-    SISC_HERO_ANIM,
+    SISC_WELCOME_ANIM,
     require_onboarding_gifs,
 )
 
@@ -412,21 +416,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ]
             ]
         )
-        await send_rich_message_with_animation(
+        await stream_rich_then_animation(
             BOT_TOKEN,
             user_id,
             INTRO_MARKDOWN,
-            SISC_HERO_ANIM,
-            "sisc_hero",
+            SISC_WELCOME_ANIM,
+            "sisc_welcome",
             apply_markup.to_dict(),
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
     else:
-        await send_rich_message_with_animation(
+        await stream_rich_then_animation(
             BOT_TOKEN,
             user_id,
             INTRO_MARKDOWN,
-            SISC_HERO_ANIM,
-            "sisc_hero",
+            SISC_WELCOME_ANIM,
+            "sisc_welcome",
+            None,
+            STREAM_CHUNK_DELAY_SECONDS,
             None,
         )
 
@@ -439,21 +447,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         member_markup = (
             InlineKeyboardMarkup(member_rows) if member_rows else None
         )
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             member_followup_markdown(has_group_link=bool(group_link)),
-            reply_markup=member_markup.to_dict() if member_markup else None,
+            member_markup.to_dict() if member_markup else None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
         return
 
     if branch == "approved_invite":
         try:
             invite_link = await revoke_and_create_invite_link(context.bot, user_data)
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 approved_invite_markdown(invite_link),
+                None,
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
         except telegram.error.BadRequest as e:
             if "rights to manage chat invite link" in str(e).lower():
@@ -470,10 +483,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if branch == "pending":
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             pending_approval_markdown(),
+            None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
         return
 
@@ -483,7 +499,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup = None
         if question_text == "How do you know about SISC?":
             reply_markup = sisc_source_keyboard().to_dict()
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             survey_question_markdown(
@@ -492,7 +508,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 question_text,
                 text_reply_hint=reply_markup is None,
             ),
-            reply_markup=reply_markup,
+            reply_markup,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
         return
 
@@ -541,22 +559,26 @@ async def serendip_command(
             rows.append(
                 [InlineKeyboardButton("💬 Open SISC group", url=group_link)]
             )
-        await send_rich_message_with_animation(
+        await stream_rich_then_animation(
             BOT_TOKEN,
             user_id,
             SERENDIP_PITCH_MARKDOWN + "\n\n" + serendip_member_followup_markdown(),
             SERENDIP_WELCOME_ANIM,
             "serendip_welcome",
             InlineKeyboardMarkup(rows).to_dict(),
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
         return
 
-    await send_rich_message_with_animation(
+    await stream_rich_then_animation(
         BOT_TOKEN,
         user_id,
         SERENDIP_PITCH_MARKDOWN + "\n\n" + serendip_gate_markdown(),
         SERENDIP_WELCOME_ANIM,
         "serendip_welcome",
+        None,
+        STREAM_CHUNK_DELAY_SECONDS,
         None,
     )
 
@@ -571,17 +593,23 @@ async def handle_apply_join(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_data = db.get_user(user_id) or db.create_user(user_id, username)
     started = begin_apply_survey(user_data)
     if started is None:
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             apply_ineligible_status_markdown(user_data.state),
+            None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
         return
     db.update_user(started)
-    await send_rich_message(
+    await stream_rich_message(
         BOT_TOKEN,
         user_id,
         survey_question_markdown(0, len(SURVEY_QUESTIONS), SURVEY_QUESTIONS[0]),
+        None,
+        STREAM_CHUNK_DELAY_SECONDS,
+        None,
     )
 
 
@@ -602,7 +630,7 @@ async def handle_survey_response(
     if not update.message.text:
         if is_sisc_source:
             reply_markup = sisc_source_keyboard()
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 survey_buttons_only_prefix()
@@ -612,10 +640,12 @@ async def handle_survey_response(
                     SURVEY_QUESTIONS[user_data.current_question],
                     text_reply_hint=False,
                 ),
-                reply_markup=reply_markup.to_dict(),
+                reply_markup.to_dict(),
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
         else:
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 survey_text_only_prefix()
@@ -624,6 +654,9 @@ async def handle_survey_response(
                     len(SURVEY_QUESTIONS),
                     SURVEY_QUESTIONS[user_data.current_question],
                 ),
+                None,
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
         return
 
@@ -631,7 +664,7 @@ async def handle_survey_response(
     if is_sisc_source:
         reply_markup = sisc_source_keyboard()
 
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             survey_buttons_only_prefix()
@@ -641,7 +674,9 @@ async def handle_survey_response(
                 SURVEY_QUESTIONS[user_data.current_question],
                 text_reply_hint=False,
             ),
-            reply_markup=reply_markup.to_dict(),
+            reply_markup.to_dict(),
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
         return
 
@@ -656,10 +691,13 @@ async def handle_survey_response(
         db.update_user(user_data)
 
         # Notify user
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             survey_complete_markdown(),
+            None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
 
         # Notify admin group
@@ -692,7 +730,7 @@ async def handle_survey_response(
             reply_markup = sisc_source_keyboard()
 
             db.update_user(user_data)
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 survey_question_markdown(
@@ -701,12 +739,14 @@ async def handle_survey_response(
                     SURVEY_QUESTIONS[user_data.current_question],
                     text_reply_hint=False,
                 ),
-                reply_markup=reply_markup.to_dict(),
+                reply_markup.to_dict(),
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
         else:
             # Ask next question normally
             db.update_user(user_data)
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 survey_question_markdown(
@@ -714,6 +754,9 @@ async def handle_survey_response(
                     len(SURVEY_QUESTIONS),
                     SURVEY_QUESTIONS[user_data.current_question],
                 ),
+                None,
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
 
 
@@ -747,7 +790,7 @@ async def handle_survey_option_selection(
     if selected_option == "Referral":
         # Show confirmation and ask the referral question (without back button)
         db.update_user(user_data)
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             "*You selected:* ==Referral==\n\n"
@@ -756,12 +799,18 @@ async def handle_survey_option_selection(
                 len(SURVEY_QUESTIONS),
                 SURVEY_QUESTIONS[user_data.current_question],
             ),
+            None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
     else:
-        await send_rich_message(
+        await stream_rich_message(
             BOT_TOKEN,
             user_id,
             f"*You selected:* =={selected_option}==",
+            None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
         )
 
         # Move to the question after "Who is your referral?"
@@ -774,10 +823,13 @@ async def handle_survey_option_selection(
             db.update_user(user_data)
 
             # Send completion message
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 survey_complete_markdown(),
+                None,
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
 
             # Notify admin group
@@ -849,10 +901,13 @@ async def handle_admin_decision(
             )
 
             # Notify user with new link
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 approved_invite_markdown(invite_link),
+                None,
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
             await query.edit_message_text(
                 f"User {user_data.username or user_id} was already approved. Sent new invite link."
@@ -903,10 +958,13 @@ async def handle_admin_decision(
             db.update_user(user_data)
 
             # Notify user
-            await send_rich_message(
+            await stream_rich_message(
                 BOT_TOKEN,
                 user_id,
                 approved_invite_markdown(invite_link),
+                None,
+                STREAM_CHUNK_DELAY_SECONDS,
+                None,
             )
 
             # Remove inline keyboard and update message text
@@ -1007,10 +1065,13 @@ async def handle_rejection_reason(
     db.update_user(user_data)
 
     # Notify user with reason
-    await send_rich_message(
+    await stream_rich_message(
         BOT_TOKEN,
         user_data.user_id,
         rejection_markdown(rejection_reason),
+        None,
+        STREAM_CHUNK_DELAY_SECONDS,
+        None,
     )
 
     # Remove inline keyboard from original message if we have its ID

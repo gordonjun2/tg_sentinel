@@ -4,10 +4,21 @@ from unittest.mock import MagicMock
 import pytest
 
 from rich_messages import (
+    STREAM_CHUNK_DELAY_SECONDS,
+    cumulative_markdown_chunks,
     send_animation,
     send_rich_message,
-    send_rich_message_with_animation,
+    stream_rich_then_animation,
 )
+
+
+def _ok_response(result: object) -> MagicMock:
+    payload = {"ok": True, "result": result}
+    return MagicMock(
+        status_code=200,
+        text=__import__("json").dumps(payload),
+        json=lambda: payload,
+    )
 
 
 @pytest.mark.asyncio
@@ -105,8 +116,17 @@ async def test_send_animation_missing_file():
         )
 
 
+def test_cumulative_markdown_chunks():
+    text = "One\n\nTwo\n\nThree"
+    assert cumulative_markdown_chunks(text) == [
+        "One",
+        "One\n\nTwo",
+        "One\n\nTwo\n\nThree",
+    ]
+
+
 @pytest.mark.asyncio
-async def test_send_rich_message_with_animation_upload(tmp_path: Path, monkeypatch):
+async def test_stream_rich_then_animation(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "rich_messages._FILE_ID_CACHE_PATH", tmp_path / "cache.json"
     )
@@ -116,34 +136,52 @@ async def test_send_rich_message_with_animation_upload(tmp_path: Path, monkeypat
     mp4 = tmp_path / "hero.mp4"
     mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42")
     session = MagicMock()
-    session.post.return_value = MagicMock(
-        status_code=200,
-        text='{"ok":true,"result":{"message_id":3,"animation":{"file_id":"anim123"}}}',
-        json=lambda: {
-            "ok": True,
-            "result": {
-                "message_id": 3,
-                "animation": {"file_id": "anim123"},
-            },
-        },
-    )
-    result = await send_rich_message_with_animation(
-        bot_token="tok",
-        chat_id=9,
-        markdown="# SISC",
-        animation_path=mp4,
-        media_id="sisc_hero",
-        reply_markup=None,
-        session=session,
+
+    def _route(*args, **kwargs):
+        url = args[0]
+        if url.endswith("/sendRichMessageDraft"):
+            return _ok_response(True)
+        if url.endswith("/sendRichMessage"):
+            return _ok_response(
+                {
+                    "message_id": 3,
+                    "animation": {"file_id": "anim123"},
+                }
+            )
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    session.post.side_effect = _route
+    markdown = "Hello\n\nWorld"
+    result = await stream_rich_then_animation(
+        "tok",
+        9,
+        markdown,
+        mp4,
+        "sisc_welcome",
+        None,
+        0.0,
+        session,
     )
     assert result["message_id"] == 3
-    url = session.post.call_args.args[0]
-    assert url.endswith("/sendRichMessage")
-    data = session.post.call_args.kwargs["data"]
-    assert data["chat_id"] == "9"
-    assert "sisc_hero" in session.post.call_args.kwargs["files"]
+    methods = [
+        call.args[0].rsplit("/", 1)[-1] for call in session.post.call_args_list
+    ]
+    assert methods == [
+        "sendRichMessageDraft",
+        "sendRichMessageDraft",
+        "sendRichMessage",
+    ]
+    draft_bodies = [
+        call.kwargs["json"]
+        for call in session.post.call_args_list
+        if call.args[0].endswith("/sendRichMessageDraft")
+    ]
+    assert draft_bodies[0]["rich_message"]["markdown"] == "Hello"
+    assert draft_bodies[1]["rich_message"]["markdown"] == "Hello\n\nWorld"
+    assert draft_bodies[0]["draft_id"] == draft_bodies[1]["draft_id"]
+    rich_call = session.post.call_args_list[-1]
+    data = rich_call.kwargs["data"]
     rich = __import__("json").loads(data["rich_message"])
-    assert rich["markdown"].startswith("![](tg://video?id=sisc_hero)")
-    assert "# SISC" in rich["markdown"]
-    assert rich["media"][0]["media"]["type"] == "animation"
-    assert rich["media"][0]["media"]["media"] == "attach://sisc_hero"
+    assert rich["markdown"].startswith("![](tg://video?id=sisc_welcome)")
+    assert "Hello\n\nWorld" in rich["markdown"]
+    assert STREAM_CHUNK_DELAY_SECONDS > 0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -257,6 +258,54 @@ def _post_rich_message_with_animation(
     return result
 
 
+STREAM_CHUNK_DELAY_SECONDS = 0.28
+
+
+def _new_draft_id() -> int:
+    # Non-zero; reuse across draft updates so Telegram animates the growth.
+    value = int(time.time() * 1000) % 2_147_483_647
+    if value == 0:
+        return 1
+    return value
+
+
+def cumulative_markdown_chunks(markdown: str) -> list[str]:
+    parts = [part.strip() for part in markdown.strip().split("\n\n") if part.strip()]
+    if not parts:
+        return [markdown]
+    return ["\n\n".join(parts[: index + 1]) for index in range(len(parts))]
+
+
+def _post_rich_message_draft(
+    bot_token: str,
+    chat_id: int,
+    draft_id: int,
+    markdown: str,
+    session: requests.Session,
+) -> bool:
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "draft_id": draft_id,
+        "rich_message": {"markdown": markdown},
+    }
+    resp = session.post(
+        API_TMPL.format(token=bot_token, method="sendRichMessageDraft"),
+        json=payload,
+        timeout=30,
+    )
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise RuntimeError(
+            f"sendRichMessageDraft non-JSON response status={resp.status_code} body={resp.text}"
+        ) from exc
+    if resp.status_code != 200 or not data.get("ok"):
+        raise RuntimeError(
+            f"sendRichMessageDraft failed status={resp.status_code} body={resp.text}"
+        )
+    return bool(data.get("result"))
+
+
 async def send_rich_message(
     bot_token: str,
     chat_id: int,
@@ -275,15 +324,60 @@ async def send_rich_message(
             sess.close()
 
 
-async def send_rich_message_with_animation(
+async def _stream_rich_drafts(
+    bot_token: str,
+    chat_id: int,
+    markdown: str,
+    chunk_delay_seconds: float,
+    session: requests.Session,
+) -> None:
+    draft_id = _new_draft_id()
+    for chunk in cumulative_markdown_chunks(markdown):
+        await asyncio.to_thread(
+            _post_rich_message_draft, bot_token, chat_id, draft_id, chunk, session
+        )
+        if chunk_delay_seconds > 0:
+            await asyncio.sleep(chunk_delay_seconds)
+
+
+async def stream_rich_message(
+    bot_token: str,
+    chat_id: int,
+    markdown: str,
+    reply_markup: Optional[dict],
+    chunk_delay_seconds: float,
+    session: Optional[requests.Session],
+) -> dict[str, Any]:
+    """Stream text as a rich draft, then persist with sendRichMessage."""
+    owns_session = session is None
+    sess = session or requests.Session()
+    try:
+        await _stream_rich_drafts(
+            bot_token, chat_id, markdown, chunk_delay_seconds, sess
+        )
+        return await asyncio.to_thread(
+            _post_rich_message, bot_token, chat_id, markdown, reply_markup, sess
+        )
+    finally:
+        if owns_session:
+            sess.close()
+
+
+async def stream_rich_then_animation(
     bot_token: str,
     chat_id: int,
     markdown: str,
     animation_path: Union[Path, str],
     media_id: str,
     reply_markup: Optional[dict],
-    session: Optional[requests.Session] = None,
+    chunk_delay_seconds: float,
+    session: Optional[requests.Session],
 ) -> dict[str, Any]:
+    """Stream text as a rich draft, then persist with embedded animation.
+
+    Drafts cannot attach new media, so the GIF appears on the final
+    sendRichMessage, replacing the ephemeral draft in place.
+    """
     path = Path(animation_path)
     if not path.is_file():
         raise FileNotFoundError(f"Animation file not found: {path}")
@@ -292,6 +386,9 @@ async def send_rich_message_with_animation(
     owns_session = session is None
     sess = session or requests.Session()
     try:
+        await _stream_rich_drafts(
+            bot_token, chat_id, markdown, chunk_delay_seconds, sess
+        )
         return await asyncio.to_thread(
             _post_rich_message_with_animation,
             bot_token,

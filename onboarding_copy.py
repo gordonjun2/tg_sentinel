@@ -1,6 +1,4 @@
-INTRO_MARKDOWN = """# SISC
-
-👋 Welcome to the **Super-Individual Secret Club**!
+INTRO_MARKDOWN = """👋 Welcome to the **Super-Individual Secret Club**!
 
 *We're a space where sharp minds gather to stay AI-ready, challenge boundaries, and explore bold ideas shaping the future.*
 

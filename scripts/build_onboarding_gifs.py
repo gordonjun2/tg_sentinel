@@ -2,7 +2,7 @@
 """Build onboarding animations for the SISC gate bot.
 
 Outputs under assets/onboarding/:
-  - sisc-hero.mp4: MiniMax (fal) title card, muted H.264
+  - sisc-welcome.mp4: MiniMax (fal) title card, center-cropped 16:9, muted H.264
   - serendip-welcome.mp4: two-stage poster + fal I2V (words locked in frames)
 
 Serendip default source is `_source/serendip-wan.mp4` (already includes title
@@ -122,14 +122,20 @@ def encode_muted_h264(
     subprocess.run(cmd, check=True)
 
 
-def build_sisc_hero_mp4(source: Path, dest: Path) -> None:
+def build_sisc_welcome_mp4(source: Path, dest: Path) -> None:
     if not source.is_file():
         raise FileNotFoundError(
-            f"Missing SISC hero source video: {source}. "
+            f"Missing SISC welcome source video: {source}. "
             "Generate with fal MiniMax H3 Max text-to-video, save as that path, "
             "or set SISC_HERO_SOURCE."
         )
-    encode_muted_h264(source, dest, "scale=768:768:flags=lanczos", "23")
+    # Square source → short landscape banner; bias crop downward to trim top empty space.
+    encode_muted_h264(
+        source,
+        dest,
+        "scale=768:768:flags=lanczos,crop=768:256:0:286",
+        "23",
+    )
 
 
 def build_serendip_locked_mp4(source: Path, dest: Path) -> None:
@@ -139,11 +145,11 @@ def build_serendip_locked_mp4(source: Path, dest: Path) -> None:
             f"Missing Serendip locked-text source: {source}. "
             "Compose poster + fal I2V, save as that path, or set SERENDIP_VIDEO_SOURCE."
         )
-    # Keep source aspect (poster I2V may already be cropped). Even dims for H.264.
+    # Keep header title + paper buffer; drop body (~y=752 on 720x852), then ~70% scale.
     encode_muted_h264(
         source,
         dest,
-        "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos",
+        "crop=iw:744:0:0,scale=504:520:flags=lanczos",
         "20",
     )
 
@@ -464,11 +470,11 @@ def main() -> None:
     )
     serendip_loop_env = os.environ.get("SERENDIP_LOOP_WEBP")
     serendip_loop = Path(serendip_loop_env) if serendip_loop_env else None
-    sisc_path = OUT_DIR / "sisc-hero.mp4"
+    sisc_path = OUT_DIR / "sisc-welcome.mp4"
     serendip_path = OUT_DIR / "serendip-welcome.mp4"
 
     if sisc_source.is_file():
-        build_sisc_hero_mp4(sisc_source, sisc_path)
+        build_sisc_welcome_mp4(sisc_source, sisc_path)
         print(f"Wrote {sisc_path} ({sisc_path.stat().st_size} bytes)")
     elif sisc_path.is_file():
         print(f"Keeping existing {sisc_path} (no source at {sisc_source})")
