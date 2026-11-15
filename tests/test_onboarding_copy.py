@@ -25,10 +25,11 @@ def test_intro_is_sisc_only_no_serendip_product():
     assert "SISC access first" not in INTRO_MARKDOWN
 
 
-def test_serendip_pitch_has_product_and_gate():
+def test_serendip_pitch_has_product_without_gate():
     assert "# Serendip" in SERENDIP_PITCH_MARKDOWN
     assert "Mini App" in SERENDIP_PITCH_MARKDOWN
-    assert "SISC" in SERENDIP_PITCH_MARKDOWN
+    assert "SISC access" not in SERENDIP_PITCH_MARKDOWN
+    assert "found quietly" in SERENDIP_PITCH_MARKDOWN
 
 
 def test_public_status_copy_omits_serendip_cta():
@@ -41,9 +42,13 @@ def test_public_status_copy_omits_serendip_cta():
 
 
 def test_serendip_command_copy():
-    assert "join SISC" in serendip_gate_markdown().lower() or "SISC" in serendip_gate_markdown()
-    assert "/start" in serendip_gate_markdown()
-    assert "Serendip" in serendip_member_followup_markdown()
+    gate = serendip_gate_markdown()
+    assert "SISC" in gate
+    assert "/start" in gate
+    assert "/serendip" in gate
+    followup = serendip_member_followup_markdown()
+    assert "Mini App" in followup
+    assert "##" not in followup
 
 
 def test_survey_question_uses_one_based_of_total():

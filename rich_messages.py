@@ -373,11 +373,14 @@ async def stream_rich_then_animation(
     chunk_delay_seconds: float,
     session: Optional[requests.Session],
 ) -> dict[str, Any]:
-    """Stream text as a rich draft, then persist with embedded animation.
+    """Send rich text with embedded animation and optional keyboard in one shot.
 
-    Drafts cannot attach new media, so the GIF appears on the final
-    sendRichMessage, replacing the ephemeral draft in place.
+    Draft streaming is skipped on purpose: drafts cannot carry reply_markup or
+    new media uploads, so streaming only delayed the button and the GIF.
+    Prefer a warmed file_id (see warm_animation_file_ids) so Telegram does not
+    re-upload on every /start or /serendip.
     """
+    _ = chunk_delay_seconds  # kept for call-site compatibility; drafts skipped
     path = Path(animation_path)
     if not path.is_file():
         raise FileNotFoundError(f"Animation file not found: {path}")
@@ -386,9 +389,6 @@ async def stream_rich_then_animation(
     owns_session = session is None
     sess = session or requests.Session()
     try:
-        await _stream_rich_drafts(
-            bot_token, chat_id, markdown, chunk_delay_seconds, sess
-        )
         return await asyncio.to_thread(
             _post_rich_message_with_animation,
             bot_token,
@@ -402,3 +402,62 @@ async def stream_rich_then_animation(
     finally:
         if owns_session:
             sess.close()
+
+
+def _delete_message(
+    bot_token: str,
+    chat_id: int,
+    message_id: int,
+    session: requests.Session,
+) -> None:
+    resp = session.post(
+        API_TMPL.format(token=bot_token, method="deleteMessage"),
+        data={"chat_id": str(chat_id), "message_id": str(message_id)},
+        timeout=30,
+    )
+    try:
+        data = resp.json()
+    except Exception:
+        return
+    if resp.status_code != 200 or not data.get("ok"):
+        return
+
+
+def warm_animation_file_ids(
+    bot_token: str,
+    warm_chat_id: int,
+    animation_paths: list[Path],
+    session: Optional[requests.Session] = None,
+) -> None:
+    """Upload each animation once (if uncached) so later sends reuse file_id."""
+    owns_session = session is None
+    sess = session or requests.Session()
+    try:
+        for path in animation_paths:
+            resolved = Path(path)
+            if not resolved.is_file():
+                raise FileNotFoundError(f"Animation file not found: {resolved}")
+            if _cached_file_id(resolved) is not None:
+                continue
+            result = _post_animation(bot_token, warm_chat_id, resolved, sess)
+            message_id = result.get("message_id")
+            if isinstance(message_id, int):
+                _delete_message(bot_token, warm_chat_id, message_id, sess)
+    finally:
+        if owns_session:
+            sess.close()
+
+
+async def warm_onboarding_animations(
+    bot_token: str,
+    warm_chat_id: int,
+    animation_paths: list[Path],
+    session: Optional[requests.Session] = None,
+) -> None:
+    await asyncio.to_thread(
+        warm_animation_file_ids,
+        bot_token,
+        warm_chat_id,
+        animation_paths,
+        session,
+    )

@@ -145,11 +145,16 @@ def build_serendip_locked_mp4(source: Path, dest: Path) -> None:
             f"Missing Serendip locked-text source: {source}. "
             "Compose poster + fal I2V, save as that path, or set SERENDIP_VIDEO_SOURCE."
         )
-    # Keep header title + paper buffer; drop body (~y=752 on 720x852), then ~70% scale.
+    # Keep mascots + tagline, drop lower body copy, then inset on paper so Telegram
+    # full-bleed still shows left/right padding (clients always stretch to chat width).
     encode_muted_h264(
         source,
         dest,
-        "crop=iw:744:0:0,scale=504:520:flags=lanczos",
+        (
+            "crop=iw:744:0:0,"
+            "scale=420:434:flags=lanczos,"
+            "pad=720:480:(ow-iw)/2:(oh-ih)/2:0xF2EFFA"
+        ),
         "20",
     )
 

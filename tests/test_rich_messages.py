@@ -9,6 +9,7 @@ from rich_messages import (
     send_animation,
     send_rich_message,
     stream_rich_then_animation,
+    warm_animation_file_ids,
 )
 
 
@@ -126,7 +127,7 @@ def test_cumulative_markdown_chunks():
 
 
 @pytest.mark.asyncio
-async def test_stream_rich_then_animation(tmp_path: Path, monkeypatch):
+async def test_stream_rich_then_animation_skips_drafts(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "rich_messages._FILE_ID_CACHE_PATH", tmp_path / "cache.json"
     )
@@ -139,8 +140,6 @@ async def test_stream_rich_then_animation(tmp_path: Path, monkeypatch):
 
     def _route(*args, **kwargs):
         url = args[0]
-        if url.endswith("/sendRichMessageDraft"):
-            return _ok_response(True)
         if url.endswith("/sendRichMessage"):
             return _ok_response(
                 {
@@ -158,30 +157,52 @@ async def test_stream_rich_then_animation(tmp_path: Path, monkeypatch):
         markdown,
         mp4,
         "sisc_welcome",
-        None,
-        0.0,
+        {"inline_keyboard": [[{"text": "Go", "callback_data": "go"}]]},
+        STREAM_CHUNK_DELAY_SECONDS,
         session,
     )
     assert result["message_id"] == 3
     methods = [
         call.args[0].rsplit("/", 1)[-1] for call in session.post.call_args_list
     ]
-    assert methods == [
-        "sendRichMessageDraft",
-        "sendRichMessageDraft",
-        "sendRichMessage",
-    ]
-    draft_bodies = [
-        call.kwargs["json"]
-        for call in session.post.call_args_list
-        if call.args[0].endswith("/sendRichMessageDraft")
-    ]
-    assert draft_bodies[0]["rich_message"]["markdown"] == "Hello"
-    assert draft_bodies[1]["rich_message"]["markdown"] == "Hello\n\nWorld"
-    assert draft_bodies[0]["draft_id"] == draft_bodies[1]["draft_id"]
+    assert methods == ["sendRichMessage"]
     rich_call = session.post.call_args_list[-1]
     data = rich_call.kwargs["data"]
     rich = __import__("json").loads(data["rich_message"])
     assert rich["markdown"].startswith("![](tg://video?id=sisc_welcome)")
     assert "Hello\n\nWorld" in rich["markdown"]
-    assert STREAM_CHUNK_DELAY_SECONDS > 0
+    assert "reply_markup" in data
+
+
+def test_warm_animation_file_ids_uploads_once(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "rich_messages._FILE_ID_CACHE_PATH", tmp_path / "cache.json"
+    )
+    monkeypatch.setattr("rich_messages._file_id_cache", {})
+    monkeypatch.setattr("rich_messages._file_id_cache_loaded", False)
+
+    mp4 = tmp_path / "hero.mp4"
+    mp4.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    session = MagicMock()
+
+    def _route(*args, **kwargs):
+        url = args[0]
+        if url.endswith("/sendAnimation"):
+            return _ok_response(
+                {"message_id": 99, "animation": {"file_id": "warm123"}}
+            )
+        if url.endswith("/deleteMessage"):
+            return _ok_response(True)
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    session.post.side_effect = _route
+    warm_animation_file_ids("tok", 1, [mp4], session)
+    methods = [
+        call.args[0].rsplit("/", 1)[-1] for call in session.post.call_args_list
+    ]
+    assert methods == ["sendAnimation", "deleteMessage"]
+
+    session.post.reset_mock()
+    session.post.side_effect = _route
+    warm_animation_file_ids("tok", 1, [mp4], session)
+    assert session.post.call_count == 0

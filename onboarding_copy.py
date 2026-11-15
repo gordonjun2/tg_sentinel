@@ -11,11 +11,9 @@ To keep this circle intentional, we ask a few quick questions before letting you
 
 SERENDIP_PITCH_MARKDOWN = """# Serendip
 
-*A Telegram Mini App that helps the right people find each other.*
+*People who fit, found quietly.*
 
-Share your personality, goals, and intentions, and AI surfaces meaningful matches for you.
-
-**To use Serendip, you need SISC access first.**
+Share who you are and what you seek. The Mini App surfaces the ones who resonate, then steps aside.
 """
 
 
@@ -84,17 +82,14 @@ def member_followup_markdown(*, has_group_link: bool) -> str:
 
 def serendip_gate_markdown() -> str:
     return (
-        "## SISC access required\n\n"
-        "*Serendip is for SISC members.*\n\n"
-        "Send /start to apply or check your join status."
+        "**SISC access comes first.**\n\n"
+        "*Serendip is for members of the club.*\n\n"
+        "Send /start to apply. Come back with /serendip once you are in."
     )
 
 
 def serendip_member_followup_markdown() -> str:
-    return (
-        "## Launch Serendip\n\n"
-        "*Open the Mini App below, or jump back to the SISC group.*"
-    )
+    return "*Open the Mini App below when you are ready.*"
 
 
 def approved_resume_markdown() -> str:

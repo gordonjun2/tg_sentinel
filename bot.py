@@ -55,6 +55,7 @@ from rich_messages import (
     STREAM_CHUNK_DELAY_SECONDS,
     stream_rich_message,
     stream_rich_then_animation,
+    warm_onboarding_animations,
 )
 from onboarding_copy import (
     INTRO_MARKDOWN,
@@ -2157,6 +2158,16 @@ def main() -> None:
 
         app.create_task(_batch_announce_loop(app.bot))
         app.create_task(_rss_monitor_loop())
+        # Warm animation file_ids so /start and /serendip reuse Telegram CDN
+        # instead of re-uploading (buttons + GIF arrive in one fast send).
+        app.create_task(
+            warm_onboarding_animations(
+                BOT_TOKEN,
+                ADMIN_GROUP_ID,
+                [SISC_WELCOME_ANIM, SERENDIP_WELCOME_ANIM],
+                None,
+            )
+        )
 
     # Add post init callback
     application.post_init = post_init
