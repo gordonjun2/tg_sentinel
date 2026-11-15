@@ -1,7 +1,7 @@
 # Hidden `/serendip` Dogfood Design
 
 **Date:** 2026-11-15  
-**Status:** Approved  
+**Status:** Approved (implemented)  
 **Repo:** `tg_sentinel`  
 **Primary code:** `bot.py`, `onboarding_copy.py`  
 **Related:** `2026-11-15-sisc-serendip-start-onboarding-design.md`
