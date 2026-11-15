@@ -1,0 +1,22 @@
+tests/test_start_routing.py
+  s_2b93c2907b4337::t_bca2351c4f4e09 109-113
+  s_2b93c2907b4337::t_20448d1b9c6061 23
+bot.py
+  s_2b93c2907b4337::t_2c2c0e5eb516db 94-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33c11ab08952be07b7d62ca44d64ccd1a2bb5bb7",
+  "prompts": {},
+  "sessions": {
+    "s_2b93c2907b4337": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "41281052-0b42-4290-aeaf-bc340a7a1e29",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
