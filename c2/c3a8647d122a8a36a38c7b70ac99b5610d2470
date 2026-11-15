@@ -1,0 +1,27 @@
+bot.py
+  s_6e3b64c89a0000::t_91ca52c481475e 462-464,466-470,488-497,512-515,576-584,589-596
+  s_6e3b64c89a0000::t_df4be9ea6e4b69 59
+  s_6e3b64c89a0000::t_212fae789f35ba 633
+  s_6e3b64c89a0000::t_d6e7164af64737 630-632,634-638,641-645,657-660
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2c3a8647d122a8a36a38c7b70ac99b5610d2470",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  },
+  "sessions": {
+    "s_6e3b64c89a0000": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c3a0f498-bbc3-468f-b53d-644d5668e9dc",
+        "model": "default"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
