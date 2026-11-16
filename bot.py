@@ -63,7 +63,7 @@ from onboarding_copy import (
     SERENDIP_PITCH_MARKDOWN,
     approved_invite_markdown,
     approved_resume_markdown,
-    member_followup_markdown,
+    member_start_markdown,
     pending_approval_markdown,
     rejection_markdown,
     serendip_gate_markdown,
@@ -149,6 +149,18 @@ def resolve_serendip_branch(*, is_member: bool) -> str:
     if is_member:
         return "member"
     return "gate"
+
+
+def member_start_owns_reply(*, deep_link: bool) -> bool:
+    """Whether the gate bot answers a member /start itself.
+
+    The bots share one token: tg_sentinel polls and forwards every update to
+    Serendip. A deep-link /start is therefore answered by Serendip's main
+    menu, which already greets members and carries the group link — the gate
+    bot stays silent there. Plain /start is only handled here, so it is the
+    only path that returns the group link.
+    """
+    return not deep_link
 
 
 def begin_apply_survey(user_data: UserData) -> Optional[UserData]:
@@ -413,6 +425,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     branch = resolve_start_branch(is_member=is_member, state=user_data.state)
 
+    if branch == "member":
+        if not member_start_owns_reply(deep_link=bool(context.args)):
+            return
+        member_rows = []
+        if group_link:
+            member_rows.append(
+                [InlineKeyboardButton("💬 Open SISC group", url=group_link)]
+            )
+        member_markup = (
+            InlineKeyboardMarkup(member_rows) if member_rows else None
+        )
+        await stream_rich_then_animation(
+            BOT_TOKEN,
+            user_id,
+            member_start_markdown(has_group_link=bool(group_link)),
+            SISC_WELCOME_ANIM,
+            "sisc_welcome",
+            member_markup.to_dict() if member_markup else None,
+            STREAM_CHUNK_DELAY_SECONDS,
+            None,
+        )
+        return
+
     if branch == "apply":
         apply_markup = InlineKeyboardMarkup(
             [
@@ -444,25 +479,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             STREAM_CHUNK_DELAY_SECONDS,
             None,
         )
-
-    if branch == "member":
-        member_rows = []
-        if group_link:
-            member_rows.append(
-                [InlineKeyboardButton("💬 Open SISC group", url=group_link)]
-            )
-        member_markup = (
-            InlineKeyboardMarkup(member_rows) if member_rows else None
-        )
-        await stream_rich_message(
-            BOT_TOKEN,
-            user_id,
-            member_followup_markdown(has_group_link=bool(group_link)),
-            member_markup.to_dict() if member_markup else None,
-            STREAM_CHUNK_DELAY_SECONDS,
-            None,
-        )
-        return
 
     if branch == "approved_invite":
         try:

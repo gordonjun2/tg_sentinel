@@ -2,7 +2,7 @@ from onboarding_copy import (
     INTRO_MARKDOWN,
     SERENDIP_PITCH_MARKDOWN,
     approved_invite_markdown,
-    member_followup_markdown,
+    member_start_markdown,
     pending_approval_markdown,
     rejection_markdown,
     serendip_gate_markdown,
@@ -35,8 +35,8 @@ def test_serendip_pitch_has_product_without_gate():
 def test_public_status_copy_omits_serendip_cta():
     assert "Serendip" not in survey_complete_markdown()
     assert "Serendip" not in approved_invite_markdown("https://t.me/+x")
-    assert "Serendip" not in member_followup_markdown(has_group_link=True)
-    assert "Serendip" not in member_followup_markdown(has_group_link=False)
+    assert "Serendip" not in member_start_markdown(has_group_link=True)
+    assert "Serendip" not in member_start_markdown(has_group_link=False)
     assert "Serendip" not in pending_approval_markdown()
     assert "Serendip" not in rejection_markdown("Nope")
 
@@ -79,8 +79,8 @@ def test_survey_complete_and_pending_and_member_followup():
     assert "Application received" in complete
     assert "*Thanks for completing the questions.*" in complete
     assert "Pending review" in pending_approval_markdown()
-    with_link = member_followup_markdown(has_group_link=True)
-    without_link = member_followup_markdown(has_group_link=False)
+    with_link = member_start_markdown(has_group_link=True)
+    without_link = member_start_markdown(has_group_link=False)
     assert "You are in" in with_link
     assert "Open the SISC group when you are ready." in with_link
     assert "You are in" in without_link

@@ -20,7 +20,12 @@ for _key, _value in _REQUIRED_ENV.items():
     os.environ.setdefault(_key, _value)
 
 from database import UserData, UserState
-from bot import begin_apply_survey, resolve_serendip_branch, resolve_start_branch
+from bot import (
+    begin_apply_survey,
+    member_start_owns_reply,
+    resolve_serendip_branch,
+    resolve_start_branch,
+)
 from onboarding_copy import survey_question_markdown
 from config import SURVEY_QUESTIONS
 
@@ -111,3 +116,11 @@ def test_begin_apply_survey_approved_does_not_reset():
 def test_resolve_serendip_branch():
     assert resolve_serendip_branch(is_member=True) == "member"
     assert resolve_serendip_branch(is_member=False) == "gate"
+
+
+def test_member_start_owns_reply_matrix():
+    # Deep-link /start is answered by Serendip's main menu (shared bot):
+    # the gate bot stays silent so the group link is not sent twice.
+    assert member_start_owns_reply(deep_link=True) is False
+    # Plain /start is handled only here: it must return the group link.
+    assert member_start_owns_reply(deep_link=False) is True

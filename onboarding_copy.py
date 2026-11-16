@@ -68,7 +68,7 @@ def rejection_markdown(reason: str) -> str:
     )
 
 
-def member_followup_markdown(*, has_group_link: bool) -> str:
+def member_start_markdown(*, has_group_link: bool) -> str:
     if has_group_link:
         return (
             "## You are in\n\n"
