@@ -1,0 +1,20 @@
+bot.py
+  h_54650ae5e74c9c 66,154-165,428-450
+onboarding_copy.py
+  h_54650ae5e74c9c 71
+tests/test_onboarding_copy.py
+  h_54650ae5e74c9c 5,38-39,82-83
+tests/test_start_routing.py
+  h_54650ae5e74c9c 23-28,119-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fcb6f9ed98907a1ae9cfe9779bd041872aa4bf20",
+  "prompts": {},
+  "humans": {
+    "h_54650ae5e74c9c": {
+      "author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
