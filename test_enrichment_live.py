@@ -65,7 +65,7 @@ async def run_flow(message_text: str, label: str):
             print(f"  No content extracted")
 
     print("\n" + "-" * 40)
-    print("STEP 4: Classify worthiness (Gemini -> OpenAI fallback)")
+    print("STEP 4: Classify worthiness")
     print("-" * 40)
     classification = classify_worthiness(context_text)
     print(f"Classification: {json.dumps(classification, indent=2)}")
@@ -107,7 +107,7 @@ async def run_flow(message_text: str, label: str):
         return
 
     print("\n" + "-" * 40)
-    print("STEP 6: Generate enrichment reply (Gemini -> OpenAI fallback)")
+    print("STEP 6: Generate enrichment reply")
     print("-" * 40)
     reply = generate_enrichment_reply(context_text, retrieved_context)
     if reply:

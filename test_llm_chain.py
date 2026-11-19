@@ -29,22 +29,22 @@ def test_first_provider_success():
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", lambda: "g"),
+            ("alpha", "g-model", lambda: "g"),
             ("openai", "o-model", lambda: "o"),
         ],
     )
     assert outcome.result == "g"
-    assert outcome.provider == "gemini"
+    assert outcome.provider == "alpha"
 
 
 def test_falls_back_to_next_provider():
     def _boom():
-        raise RuntimeError("gemini down")
+        raise RuntimeError("alpha down")
 
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", _boom),
+            ("alpha", "g-model", _boom),
             ("openai", "o-model", lambda: "o"),
         ],
     )
@@ -59,7 +59,7 @@ def test_partial_failure_does_not_raise():
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", _boom),
+            ("alpha", "g-model", _boom),
             ("openai", "o-model", lambda: "ok"),
         ],
     )
@@ -77,11 +77,11 @@ def test_total_failure_only_when_all_providers_fail():
         run_llm_chain(
             "task",
             [
-                ("gemini", "g-model", _boom("gemini")),
+                ("alpha", "g-model", _boom("alpha")),
                 ("openai", "o-model", _boom("openai")),
             ],
         )
-    assert "gemini" in str(excinfo.value)
+    assert "alpha" in str(excinfo.value)
     assert "openai" in str(excinfo.value)
 
 
@@ -107,9 +107,9 @@ def test_chain_survives_until_last_provider_succeeds():
 def test_all_providers_skipped_raises_without_calling_thunks():
     from llm_chain import record_failure
 
-    record_failure("gemini", RuntimeError("404 no longer available"))
+    record_failure("alpha", RuntimeError("404 no longer available"))
     record_failure("openai", RuntimeError("404 no longer available"))
-    assert provider_available("gemini") is False
+    assert provider_available("alpha") is False
     assert provider_available("openai") is False
 
     called = []
@@ -118,7 +118,7 @@ def test_all_providers_skipped_raises_without_calling_thunks():
         run_llm_chain(
             "task",
             [
-                ("gemini", "g-model", lambda: called.append("gemini")),
+                ("alpha", "g-model", lambda: called.append("alpha")),
                 ("openai", "o-model", lambda: called.append("openai")),
             ],
         )
@@ -134,20 +134,20 @@ def test_permanent_error_opens_circuit_immediately():
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", _gone),
+            ("alpha", "g-model", _gone),
             ("openai", "o-model", lambda: "o"),
         ],
     )
     assert outcome.provider == "openai"
 
-    assert provider_available("gemini") is False
+    assert provider_available("alpha") is False
 
     calls = []
 
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", lambda: calls.append("gemini")),
+            ("alpha", "g-model", lambda: calls.append("alpha")),
             ("openai", "o-model", lambda: "o"),
         ],
     )
@@ -163,10 +163,10 @@ def test_transient_failures_open_circuit_after_threshold():
 
     for _ in range(FAILURE_THRESHOLD):
         with pytest.raises(LLMChainError):
-            run_llm_chain("task", [("gemini", "g-model", _boom)])
+            run_llm_chain("task", [("alpha", "g-model", _boom)])
 
-    assert provider_available("gemini") is False
-    assert _health["gemini"]["failures"] == FAILURE_THRESHOLD
+    assert provider_available("alpha") is False
+    assert _health["alpha"]["failures"] == FAILURE_THRESHOLD
 
 
 def test_success_resets_failure_count():
@@ -179,16 +179,16 @@ def test_success_resets_failure_count():
         return "ok"
 
     with pytest.raises(LLMChainError):
-        run_llm_chain("task", [("gemini", "g-model", _flaky)])
+        run_llm_chain("task", [("alpha", "g-model", _flaky)])
 
     run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", _flaky),
+            ("alpha", "g-model", _flaky),
             ("openai", "o-model", lambda: "o"),
         ],
     )
-    assert provider_available("gemini") is True
+    assert provider_available("alpha") is True
     assert counter["n"] == 2
 
 
@@ -196,12 +196,12 @@ def test_empty_result_counts_as_success():
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", lambda: ""),
+            ("alpha", "g-model", lambda: ""),
             ("openai", "o-model", lambda: "o"),
         ],
     )
     assert outcome.result == ""
-    assert outcome.provider == "gemini"
+    assert outcome.provider == "alpha"
 
 
 def test_listener_fires_on_each_failure_with_model_and_fallback(_record_alerts):
@@ -215,15 +215,15 @@ def test_listener_fires_on_each_failure_with_model_and_fallback(_record_alerts):
         run_llm_chain(
             "score_url_content",
             [
-                ("gemini", "gemini-3.8-flash", _boom("404 no longer available")),
+                ("alpha", "alpha-model", _boom("404 no longer available")),
                 ("openai", "gpt-5-mini", _boom("rate limited")),
             ],
         )
 
     assert len(_record_alerts) == 2
     first, second = _record_alerts
-    assert first["provider"] == "gemini"
-    assert first["model"] == "gemini-3.8-flash"
+    assert first["provider"] == "alpha"
+    assert first["model"] == "alpha-model"
     assert first["task"] == "score_url_content"
     assert "404" in str(first["error"])
     assert first["fallback"] == "openai"
@@ -236,7 +236,7 @@ def test_listener_not_fired_on_success(_record_alerts):
     run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", lambda: "g"),
+            ("alpha", "g-model", lambda: "g"),
             ("openai", "o-model", lambda: "o"),
         ],
     )
@@ -252,7 +252,7 @@ def test_listener_exception_does_not_break_chain(_record_alerts):
     outcome = run_llm_chain(
         "task",
         [
-            ("gemini", "g-model", lambda: "g"),
+            ("alpha", "g-model", lambda: "g"),
             ("openai", "o-model", lambda: "o"),
         ],
     )

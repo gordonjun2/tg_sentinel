@@ -17,7 +17,6 @@ fallback provider if any.
 
 Usage:
     outcome = run_llm_chain("score_url", [
-        ("gemini", "gemini-3.8-flash", lambda: call_gemini()),
         ("openai", "gpt-5-mini", lambda: call_openai()),
     ])
     outcome.result, outcome.provider
@@ -31,7 +30,7 @@ from typing import Callable, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-PROVIDER_CHAIN: Sequence[str] = ("gemini", "openai")
+PROVIDER_CHAIN: Sequence[str] = ("openai",)
 
 FAILURE_THRESHOLD = 2
 COOLDOWN_SECONDS = 300

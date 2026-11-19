@@ -149,8 +149,8 @@ def _worthy_result():
     )
 
 
-@patch("ai_enrichment.openai_client", None)
-@patch("ai_enrichment._create_gemini_instructor")
+@patch("ai_enrichment.openai_client", MagicMock())
+@patch("ai_enrichment._create_openai_instructor")
 def test_classify_worthiness_worthy(mock_factory):
     mock_factory.return_value = _mock_instructor(result=_worthy_result())
 
@@ -159,22 +159,8 @@ def test_classify_worthiness_worthy(mock_factory):
     assert result["confidence"] > 0.5
 
 
-@patch("ai_enrichment.openai_client", None)
-@patch("ai_enrichment._create_gemini_instructor")
-def test_classify_worthiness_gemini_failure_falls_back(mock_factory):
-    mock_factory.return_value = _mock_instructor(exc=RuntimeError("gemini down"))
-    mock_openai = _mock_instructor(result=_worthy_result())
-
-    with patch("ai_enrichment._create_openai_instructor", return_value=mock_openai), \
-            patch("ai_enrichment.openai_client", MagicMock()):
-        result = classify_worthiness("User: TSMC revenue is up")
-
-    assert result["should_reply"] is True
-    assert result["confidence"] > 0.5
-
-
-@patch("ai_enrichment.openai_client", None)
-@patch("ai_enrichment._create_gemini_instructor")
+@patch("ai_enrichment.openai_client", MagicMock())
+@patch("ai_enrichment._create_openai_instructor")
 def test_classify_worthiness_not_worthy(mock_factory):
     result = WorthinessResult(
         should_reply=False,
@@ -189,8 +175,8 @@ def test_classify_worthiness_not_worthy(mock_factory):
     assert result["should_reply"] is False
 
 
-@patch("ai_enrichment.openai_client", None)
-@patch("ai_enrichment._create_gemini_instructor")
+@patch("ai_enrichment.openai_client", MagicMock())
+@patch("ai_enrichment._create_openai_instructor")
 def test_classify_worthiness_malformed_response(mock_factory):
     mock_factory.return_value = _mock_instructor(exc=ValueError("not json at all"))
 
@@ -199,22 +185,22 @@ def test_classify_worthiness_malformed_response(mock_factory):
     assert result["reason"] == "classification_error"
 
 
-@patch("ai_enrichment.gemini_client")
+@patch("ai_enrichment.openai_client")
 def test_generate_enrichment_reply_valid(mock_client):
     mock_response = MagicMock()
-    mock_response.text = "TSMC reported strong earnings driven by AI demand."
-    mock_client.models.generate_content.return_value = mock_response
+    mock_response.output_text = "TSMC reported strong earnings driven by AI demand."
+    mock_client.responses.create.return_value = mock_response
 
     result = generate_enrichment_reply("User: TSMC stock up", "TSMC earnings report...")
     assert result is not None
     assert "TSMC" in result
 
 
-@patch("ai_enrichment.gemini_client")
+@patch("ai_enrichment.openai_client")
 def test_generate_enrichment_reply_no_reply(mock_client):
     mock_response = MagicMock()
-    mock_response.text = "NO_REPLY"
-    mock_client.models.generate_content.return_value = mock_response
+    mock_response.output_text = "NO_REPLY"
+    mock_client.responses.create.return_value = mock_response
 
     result = generate_enrichment_reply("User: lol", "nothing useful")
     assert result is None

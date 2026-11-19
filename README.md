@@ -10,7 +10,7 @@ idempotent orchestrator.
 
 | Service | What it does | Entry point | Started by | Status |
 |---|---|---|---|---|
-| **Main bot** (`bot.py`) | Group access via survey + admin approval, AI enrichment of admin-group discussions (Gemini → OpenAI fallback), Drive uploads, audio transcription | `python bot.py` | `start_all.sh` | Active |
+| **Main bot** (`bot.py`) | Group access via survey + admin approval, AI enrichment of admin-group discussions, Drive uploads, audio transcription | `python bot.py` | `start_all.sh` | Active |
 | **Partner message summarisation** | Pyrogram user-account listener archives `SISC <>` group messages to PostgreSQL; nightly LLM digest sent to the admin group at 19:00 SGT | `python -m partner_message_summarisation.bot` | `start_all.sh` | Active |
 | **Luma reminder** | Cron job that sends Luma event reminders to the admin group | `python luma_reminder.py` | crontab (`luma_reminder.sh`) | Active (cron) |
 | **Gmail + Calendar** | Email importance triage, meeting reminders, calendar sync | `python -m gmail_calendar.bot` | — | **On hold** (kept in repo, not started) |
@@ -21,7 +21,7 @@ idempotent orchestrator.
 
 1. Create the `.env` from `.env.example` and fill in the secrets:
    `BOT_TOKEN`, `ADMIN_GROUP_ID`, `TARGET_GROUP_ID`, `GOOGLE_DRIVE_*`,
-   `GEMINI_API_KEY`, `OPENAI_API_KEY`, `TELEGRAM_API_KEY`, `TELEGRAM_HASH`,
+   `OPENAI_API_KEY`, `TELEGRAM_API_KEY`, `TELEGRAM_HASH`,
    `FIRECRAWL_API_KEY` — plus `DATABASE_URL` for the summarisation service.
 2. Install dependencies:
    ```bash
@@ -39,7 +39,7 @@ idempotent orchestrator.
    ```bash
    venv/bin/python check_api_keys.py
    ```
-   Checks `GEMINI_API_KEY`, `OPENAI_API_KEY` (validity + configured
+   Checks `OPENAI_API_KEY` (validity + configured
    enrichment model availability) and `FIRECRAWL_API_KEY` (validity +
    remaining credits). Exits non-zero if any key fails.
 5. LinkedIn company-page forwarder (requires Community Management API approval):

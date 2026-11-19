@@ -1,8 +1,7 @@
 """LLM summarization: transcripts → structured PartnerMessageSummary.
 
-Dual-provider pattern mirroring ``gmail_calendar/llm.py``: Gemini
-``response_schema`` primary, ``instructor.from_openai(OpenAI)`` fallback,
-lazy client singletons, ``temperature=0.2``. The sync SDK calls are
+OpenAI via ``instructor.from_openai(OpenAI)`` with a lazy client
+singleton. The sync SDK calls are
 offloaded to a thread so the shared asyncio loop (live ingest handlers)
 is never blocked.
 
@@ -20,9 +19,7 @@ import time
 from pydantic import BaseModel, Field
 
 from .config import (
-    GEMINI_API_KEY,
     OPENAI_API_KEY,
-    SENTINEL_DIGEST_MODEL,
     SENTINEL_MAX_MSG_CHARS,
     SENTINEL_MAX_TRANSCRIPT_CHARS,
     SENTINEL_OPENAI_DIGEST_MODEL,
@@ -265,32 +262,9 @@ def sanitize_summary(
     return PartnerMessageSummary(groups=kept)
 
 
-# --- provider calls (dual pattern, §9.4) ----------------------------------------
+# --- provider calls (§9.4) ----------------------------------------
 
-_gemini_client = None
 _openai_client = None
-
-
-def _get_gemini():
-    global _gemini_client
-    if _gemini_client is not None:
-        return _gemini_client
-    from google import genai
-    from .config import SENTINEL_VERTEX_LOCATION, SENTINEL_VERTEX_PROJECT
-
-    if SENTINEL_VERTEX_PROJECT:
-        # Vertex AI — billed to the GCP project (Developer Program credits)
-        # via its linked Cloud Billing account. Auth: Application Default
-        # Credentials (GOOGLE_APPLICATION_CREDENTIALS service account).
-        _gemini_client = genai.Client(
-            vertexai=True,
-            project=SENTINEL_VERTEX_PROJECT,
-            location=SENTINEL_VERTEX_LOCATION,
-        )
-    elif GEMINI_API_KEY:
-        # AI Studio consumer Gemini API (separate prepay wallet)
-        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    return _gemini_client
 
 
 def _get_openai():
@@ -300,32 +274,6 @@ def _get_openai():
 
         _openai_client = OpenAI(api_key=OPENAI_API_KEY)
     return _openai_client
-
-
-def _call_gemini(system_prompt: str, schema: type, text: str):
-    client = _get_gemini()
-    if client is None:
-        raise RuntimeError(
-            "Gemini client unavailable (no SENTINEL_VERTEX_PROJECT or GEMINI_API_KEY)"
-        )
-    from google.genai import types
-
-    response = client.models.generate_content(
-        model=SENTINEL_DIGEST_MODEL,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            response_mime_type="application/json",
-            response_schema=schema,
-            temperature=0.2,
-        ),
-        contents=text,
-    )
-    data = response.parsed
-    if isinstance(data, schema):
-        return data
-    if isinstance(data, dict):
-        return schema.model_validate(data)
-    return schema.model_validate_json(response.text)
 
 
 def _call_openai(system_prompt: str, response_model: type, text: str):
@@ -349,17 +297,16 @@ def _call_openai(system_prompt: str, response_model: type, text: str):
 
 
 def _dual_provider_call(system_prompt: str, schema: type, text: str):
-    """Run ``schema`` LLM extraction on ``text``: Gemini → OpenAI fallback.
+    """Run ``schema`` LLM extraction on ``text``: OpenAI.
 
     Providers are tried via the shared cost-ordered chain with circuit
-    breaking (llm_chain.py). Raises when both providers fail so the run
+    breaking (llm_chain.py). Raises when the provider fails so the run
     is marked failed and the messages stay pending (§9.4).
     """
     start = time.monotonic()
     outcome = run_llm_chain(
         "digest",
         [
-            ("gemini", SENTINEL_DIGEST_MODEL, lambda: _call_gemini(system_prompt, schema, text)),
             ("openai", SENTINEL_OPENAI_DIGEST_MODEL, lambda: _call_openai(system_prompt, schema, text)),
         ],
     )
@@ -370,7 +317,7 @@ def _dual_provider_call(system_prompt: str, schema: type, text: str):
 def _summarize_chunk(transcript: str) -> tuple[PartnerMessageSummary, str, int]:
     """Summarize one transcript chunk. Returns (summary, provider, latency_ms).
 
-    Raises when both providers fail so the run is marked failed and the
+    Raises when the provider fails so the run is marked failed and the
     messages stay pending (§9.4).
     """
     return _dual_provider_call(SYSTEM_PROMPT, PartnerMessageSummary, transcript)
@@ -382,8 +329,7 @@ async def generate_summary(
     """Summarize all transcript chunks and merge into one summary.
 
     Returns (merged summary, providers_used, total_latency_ms); provider is
-    e.g. ``"gemini"`` or ``"gemini+openai"`` when chunks split across
-    providers. Calls run in a thread so the event loop stays responsive.
+    e.g. ``"openai"``. Calls run in a thread so the event loop stays responsive.
     """
     summaries: list[PartnerMessageSummary] = []
     providers: list[str] = []

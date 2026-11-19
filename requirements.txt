@@ -12,7 +12,6 @@ beautifulsoup4
 numpy
 whisperx
 openai-whisper
-google-genai
 markdown
 weasyprint
 langchain

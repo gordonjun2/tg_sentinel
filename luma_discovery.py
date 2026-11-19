@@ -17,7 +17,7 @@ Design notes:
 - Requests are politely paced (jittered delays) with exponential
   backoff on 403/429 and hard per-run request caps. The run aborts
   (keeping the last good state) if Luma keeps blocking us.
-- LLM calls go through llm_chain (gemini -> openai fallback).
+- LLM calls go through llm_chain (openai).
 """
 
 import argparse
@@ -35,16 +35,12 @@ from typing import List, Optional
 
 import instructor
 import requests
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from config import (
     ADMIN_GROUP_ID,
     BOT_TOKEN,
-    GEMINI_API_KEY,
-    GEMINI_ENRICHMENT_MODEL,
     OPENAI_API_KEY,
     OPENAI_ENRICHMENT_MODEL,
 )
@@ -217,7 +213,6 @@ def prune_state(state: dict) -> None:
 # LLM enrichment
 # ---------------------------------------------------------------------------
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 LEVEL_LABELS = {
@@ -327,17 +322,7 @@ def normalize_level(raw: str) -> str:
     return LEVEL_ALIASES.get(key, "none")
 
 
-_gemini_instructor = None
 _openai_instructor = None
-
-
-def _create_gemini_instructor():
-    global _gemini_instructor
-    if _gemini_instructor is None:
-        _gemini_instructor = instructor.from_genai(
-            gemini_client, model=GEMINI_ENRICHMENT_MODEL
-        )
-    return _gemini_instructor
 
 
 def _create_openai_instructor():
@@ -353,17 +338,6 @@ def _create_openai_instructor():
 
 def classify_event(name: str, description: str) -> EventContext:
     user_prompt = f"Event title: {name}\n\nEvent description:\n{description[:6000]}"
-
-    def _via_gemini() -> EventContext:
-        client = _create_gemini_instructor()
-        return client.chat.completions.create(
-            response_model=EventContext,
-            messages=[
-                {"role": "system", "content": ENRICHMENT_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_retries=2,
-        )
 
     def _via_openai() -> EventContext:
         client = _create_openai_instructor()
@@ -381,7 +355,6 @@ def classify_event(name: str, description: str) -> EventContext:
     outcome = run_llm_chain(
         "luma_discovery_classify",
         [
-            ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
             ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
         ],
     )

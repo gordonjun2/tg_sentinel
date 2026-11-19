@@ -1,7 +1,6 @@
-"""Email importance scoring via Gemini (primary) with OpenAI fallback.
+"""Email importance scoring via OpenAI.
 
-Mirrors the dual-LLM pattern from ``luma_reminder.py``: Gemini first, fall
-back to OpenAI on failure. Returns a strict Pydantic-validated result.
+Returns a strict Pydantic-validated result.
 """
 
 from __future__ import annotations
@@ -10,14 +9,10 @@ import logging
 from typing import Optional
 
 import instructor
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from config import (
-    GEMINI_API_KEY,
-    GEMINI_ENRICHMENT_MODEL,
     OPENAI_API_KEY,
     OPENAI_ENRICHMENT_MODEL,
 )
@@ -68,15 +63,7 @@ Rules:
 
 # --- clients (lazy) ---------------------------------------------------------
 
-_gemini_client: Optional[genai.Client] = None
 _openai_client: Optional[OpenAI] = None
-
-
-def _get_gemini() -> Optional[genai.Client]:
-    global _gemini_client
-    if _gemini_client is None and GEMINI_API_KEY:
-        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    return _gemini_client
 
 
 def _get_openai() -> Optional[OpenAI]:
@@ -95,30 +82,6 @@ def _user_prompt(email: dict) -> str:
         f"{(email.get('snippet') or '')[:500]}\n\n"
         f"Return strict JSON per the schema."
     )
-
-
-def _score_with_gemini(email: dict) -> ImportanceResult:
-    client = _get_gemini()
-    if client is None:
-        raise RuntimeError("Gemini client unavailable (no GEMINI_API_KEY)")
-    response = client.models.generate_content(
-        model=GEMINI_ENRICHMENT_MODEL,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=ImportanceResult,
-            temperature=0.2,
-        ),
-        contents=_user_prompt(email),
-    )
-    # When response_schema is set, the SDK validates and parses.
-    data = response.parsed
-    if isinstance(data, ImportanceResult):
-        return data
-    # Fall through to manual parse if parsed is a dict.
-    if isinstance(data, dict):
-        return ImportanceResult.model_validate(data)
-    return ImportanceResult.model_validate_json(response.text)
 
 
 def _score_with_openai(email: dict) -> ImportanceResult:
@@ -140,7 +103,7 @@ def _score_with_openai(email: dict) -> ImportanceResult:
 
 
 def score_email(email: dict) -> ImportanceResult | None:
-    """Run Gemini then OpenAI. Returns None only if both failed.
+    """Run OpenAI. Returns None if it failed.
 
     Returning None means "no signal" — caller should treat that as
     NOT important (don't forward on uncertainty).
@@ -149,7 +112,6 @@ def score_email(email: dict) -> ImportanceResult | None:
         outcome = run_llm_chain(
             "email_importance",
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, lambda: _score_with_gemini(email)),
                 ("openai", OPENAI_ENRICHMENT_MODEL, lambda: _score_with_openai(email)),
             ],
         )

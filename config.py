@@ -76,10 +76,6 @@ if not GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID:
         "GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID not found in environment variables"
     )
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in environment variables")
-
 TELEGRAM_API_KEY = os.getenv("TELEGRAM_API_KEY")
 if not TELEGRAM_API_KEY:
     raise ValueError("TELEGRAM_API_KEY not found in environment variables")
@@ -93,7 +89,6 @@ if not FIRECRAWL_API_KEY:
     raise ValueError("FIRECRAWL_API_KEY not found in environment variables")
 
 AI_CONTEXT_WINDOW = int(os.getenv("AI_CONTEXT_WINDOW", "3"))
-GEMINI_ENRICHMENT_MODEL = os.getenv("GEMINI_ENRICHMENT_MODEL", "gemini-3.8-flash")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_ENRICHMENT_MODEL = os.getenv("OPENAI_ENRICHMENT_MODEL", "gpt-5-mini")
 AI_ENRICHMENT_ENABLED_DEFAULT = (
@@ -225,13 +220,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # postgres://user:pass@host:5432/db
 SISC_GROUP_REGEX = os.getenv("SISC_GROUP_REGEX", r"^SISC <>")
 SENTINEL_TIMEZONE = os.getenv("SENTINEL_TIMEZONE", "Asia/Singapore")
 SENTINEL_SUMMARY_TIME = os.getenv("SENTINEL_SUMMARY_TIME", "19:00")  # HH:MM local tz
-SENTINEL_DIGEST_MODEL = os.getenv("SENTINEL_DIGEST_MODEL", "gemini-3.6-flash")
 SENTINEL_OPENAI_DIGEST_MODEL = os.getenv("SENTINEL_OPENAI_DIGEST_MODEL", "gpt-5-mini")
-# Vertex AI mode (billed to GCP credits). When SENTINEL_VERTEX_PROJECT is set,
-# Gemini calls go through Vertex AI in that project; otherwise the AI Studio
-# GEMINI_API_KEY is used. Auth: GOOGLE_APPLICATION_CREDENTIALS service account.
-SENTINEL_VERTEX_PROJECT = os.getenv("SENTINEL_VERTEX_PROJECT", "").strip()
-SENTINEL_VERTEX_LOCATION = os.getenv("SENTINEL_VERTEX_LOCATION", "global").strip()
 SENTINEL_SESSION_NAME = os.getenv(
     "SENTINEL_SESSION_NAME",
     os.path.join(_PROJECT_ROOT, "partner_message_summarisation/data/sentinel_listener"),

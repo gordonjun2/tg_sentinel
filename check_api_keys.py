@@ -8,10 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
-GEMINI_ENRICHMENT_MODEL = os.getenv("GEMINI_ENRICHMENT_MODEL", "gemini-3.8-flash")
 OPENAI_ENRICHMENT_MODEL = os.getenv("OPENAI_ENRICHMENT_MODEL", "gpt-5-mini")
 
 TIMEOUT = 15
@@ -21,26 +19,6 @@ def mask(key: str) -> str:
     if not key:
         return "MISSING"
     return f"{key[:6]}...{key[-4:]}" if len(key) > 10 else "***"
-
-
-def check_gemini(key: str) -> tuple[bool, str]:
-    resp = requests.get(
-        "https://generativelanguage.googleapis.com/v1beta/models",
-        params={"key": key, "pageSize": 1000},
-        timeout=TIMEOUT,
-    )
-    if resp.status_code == 200:
-        names = {m.get("name", "").removeprefix("models/") for m in resp.json().get("models", [])}
-        model_status = (
-            "ok" if GEMINI_ENRICHMENT_MODEL in names else f"NOT FOUND (configured: {GEMINI_ENRICHMENT_MODEL})"
-        )
-        return True, f"valid, enrichment model {model_status}, {len(names)} models available"
-    detail = ""
-    try:
-        detail = resp.json().get("error", {}).get("message", "")
-    except Exception:
-        pass
-    return False, f"HTTP {resp.status_code} {detail}".strip()
 
 
 def check_openai(key: str) -> tuple[bool, str]:
@@ -84,7 +62,6 @@ def check_firecrawl(key: str) -> tuple[bool, str]:
 
 
 CHECKS = [
-    ("GEMINI", GEMINI_API_KEY, check_gemini),
     ("OPENAI", OPENAI_API_KEY, check_openai),
     ("FIRECRAWL", FIRECRAWL_API_KEY, check_firecrawl),
 ]

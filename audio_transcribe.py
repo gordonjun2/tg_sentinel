@@ -2,12 +2,10 @@ import time  # Add time module for timing
 import os
 import sys
 import time
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 from openai import OpenAI
 from typing import List
-from config import GEMINI_API_KEY, GEMINI_ENRICHMENT_MODEL, OPENAI_API_KEY, OPENAI_ENRICHMENT_MODEL
+from config import OPENAI_API_KEY, OPENAI_ENRICHMENT_MODEL
 from llm_chain import LLMChainError, run_llm_chain
 from utils import (
     chunk_audio_with_overlap,
@@ -37,18 +35,9 @@ class AudioTranscriber:
         # module (e.g. from bot.py) does not pull torch/whisperx into memory.
         self._model = None
 
-        self.gemini_client = genai.Client(api_key=GEMINI_API_KEY)
         self.openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
     def _generate_text(self, system_instruction: str, contents: str, task: str) -> str:
-        def _via_gemini() -> str:
-            response = self.gemini_client.models.generate_content(
-                model=GEMINI_ENRICHMENT_MODEL,
-                config=types.GenerateContentConfig(system_instruction=system_instruction),
-                contents=contents,
-            )
-            return response.text
-
         def _via_openai() -> str:
             if self.openai_client is None:
                 raise RuntimeError("OpenAI client not configured")
@@ -62,7 +51,6 @@ class AudioTranscriber:
         outcome = run_llm_chain(
             task,
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
                 ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
             ],
         )

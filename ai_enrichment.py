@@ -15,17 +15,13 @@ import pypdf
 import requests as http_requests
 import trafilatura
 from ddgs import DDGS
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from pydantic import BaseModel, Field
 import instructor
 from telegram import LinkPreviewOptions
 
 from config import (
-    GEMINI_API_KEY,
     AI_CONTEXT_WINDOW,
-    GEMINI_ENRICHMENT_MODEL,
     FIRECRAWL_API_KEY,
     OPENAI_API_KEY,
     OPENAI_ENRICHMENT_MODEL,
@@ -551,8 +547,6 @@ def search_web(query: str, max_results: int = 5) -> list:
     return search_web_duckduckgo(query, max_results)
 
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-
 openai_client = None
 if OPENAI_API_KEY:
     openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -574,19 +568,6 @@ class WorthinessResult(BaseModel):
 
 
 def classify_worthiness(context_text: str) -> dict:
-    def _via_gemini() -> WorthinessResult:
-        client = _create_gemini_instructor()
-        if client is None:
-            raise RuntimeError("Gemini client not configured")
-        return client.chat.completions.create(
-            response_model=WorthinessResult,
-            messages=[
-                {"role": "system", "content": WORTHINESS_SYSTEM_PROMPT},
-                {"role": "user", "content": context_text},
-            ],
-            max_retries=2,
-        )
-
     def _via_openai() -> WorthinessResult:
         client = _create_openai_instructor()
         if client is None:
@@ -604,7 +585,6 @@ def classify_worthiness(context_text: str) -> dict:
         outcome = run_llm_chain(
             "classify_worthiness",
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
                 ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
             ],
         )
@@ -634,20 +614,6 @@ def generate_enrichment_reply(
 
 Based on the conversation and the retrieved context, write a concise enrichment reply. If the context doesn't add meaningful value, respond with exactly: NO_REPLY"""
 
-    def _via_gemini() -> str:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_ENRICHMENT_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=ENRICHMENT_REPLY_SYSTEM_PROMPT,
-                temperature=0.3,
-            ),
-            contents=prompt,
-        )
-        reply = response.text.strip()
-        if reply == "NO_REPLY" or not reply:
-            return ""
-        return reply
-
     def _via_openai() -> str:
         if openai_client is None:
             raise RuntimeError("OpenAI client not configured")
@@ -665,7 +631,6 @@ Based on the conversation and the retrieved context, write a concise enrichment 
         outcome = run_llm_chain(
             "generate_enrichment_reply",
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
                 ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
             ],
         )
@@ -784,19 +749,6 @@ def is_semantically_duplicate(topic: str, recent_topics: list) -> bool:
 def score_url_content(url: str, content: str) -> URLScore:
     prompt = f"URL: {url}\n\nContent:\n{content[:6000]}"
 
-    def _via_gemini() -> URLScore:
-        client = _create_gemini_instructor()
-        if client is None:
-            raise RuntimeError("Gemini client not configured")
-        return client.chat.completions.create(
-            response_model=URLScore,
-            messages=[
-                {"role": "system", "content": URL_SCORING_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            max_retries=2,
-        )
-
     def _via_openai() -> URLScore:
         client = _create_openai_instructor()
         if client is None:
@@ -814,7 +766,6 @@ def score_url_content(url: str, content: str) -> URLScore:
         outcome = run_llm_chain(
             "score_url_content",
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
                 ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
             ],
         )
@@ -902,19 +853,7 @@ Output: {"should_create_poll": false, "confidence_score": 0.15, "question": null
 Reason: Product release is factual information. Unless there's a specific controversial feature being debated, this doesn't warrant a poll."""
 
 
-_gemini_instructor = None
 _openai_instructor = None
-
-
-def _create_gemini_instructor():
-    # Cached singleton: rebuilding the instructor wrapper on every call
-    # churns memory in the long-lived bot process.
-    global _gemini_instructor
-    if _gemini_instructor is None:
-        _gemini_instructor = instructor.from_genai(
-            gemini_client, model=GEMINI_ENRICHMENT_MODEL
-        )
-    return _gemini_instructor
 
 
 def _create_openai_instructor():
@@ -943,19 +882,6 @@ def evaluate_poll_opportunity(
 
 Based on the conversation and context above, would this topic make for a fun, engaging poll?"""
 
-    def _via_gemini() -> PollEvaluation:
-        client = _create_gemini_instructor()
-        if client is None:
-            raise RuntimeError("Gemini client not configured")
-        return client.chat.completions.create(
-            response_model=PollEvaluation,
-            messages=[
-                {"role": "system", "content": POLL_EVALUATION_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            max_retries=2,
-        )
-
     def _via_openai() -> PollEvaluation:
         client = _create_openai_instructor()
         if client is None:
@@ -973,7 +899,6 @@ Based on the conversation and context above, would this topic make for a fun, en
         outcome = run_llm_chain(
             "evaluate_poll_opportunity",
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
                 ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
             ],
         )

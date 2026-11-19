@@ -17,7 +17,6 @@ _DUMMY_REQUIRED = {
     "GOOGLE_DRIVE_MAIN_FOLDER_ID": "folder",
     "GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID": "folder",
     "GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID": "folder",
-    "GEMINI_API_KEY": "test-gemini",
     "OPENAI_API_KEY": "test-openai",
     "TELEGRAM_API_KEY": "12345",
     "TELEGRAM_HASH": "test-hash",

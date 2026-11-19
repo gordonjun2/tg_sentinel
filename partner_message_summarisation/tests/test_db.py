@@ -109,7 +109,7 @@ def test_state_transition_pending_to_completed(db: PartnerMessageSummarisationDB
     _run(
         db.succeed_run(
             run_id, message_count=2, chat_count=1,
-            llm_provider="gemini", llm_latency_ms=1234, report_parts=1,
+            llm_provider="openai", llm_latency_ms=1234, report_parts=1,
         )
     )
     runs = _run(db.last_runs(1))

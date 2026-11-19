@@ -79,7 +79,7 @@ bash gmail_calendar/gmail_calendar_bot.sh
 gmail_calendar/
 ├── auth.py              # OAuth bootstrap + Gmail/Calendar service factory
 ├── db.py                # SQLite schema + accessors (own gmail_calendar.db)
-├── llm.py               # Gemini + OpenAI importance scoring
+├── llm.py               # OpenAI importance scoring
 ├── telegram_notifier.py # Pyrogram client + message formatters
 ├── gmail_watcher.py     # Pub/Sub pull → history.list → LLM score → admin group
 ├── calendar_sync.py     # events.list(syncToken) across all calendars

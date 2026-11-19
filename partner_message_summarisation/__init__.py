@@ -5,8 +5,7 @@ Long-running service that:
     ``SISC_GROUP_REGEX`` and archives every message into hosted PostgreSQL
   * Backfills messages missed during downtime (bounded per-chat catch-up)
   * Once a day at ``SENTINEL_SUMMARY_TIME`` in ``SENTINEL_TIMEZONE``,
-    summarizes all pending messages into a structured summary via Gemini
-    (OpenAI/instructor fallback)
+    summarizes all pending messages into a structured summary via OpenAI
   * Delivers the plain-text report to the admin group via a bot-token
     Pyrogram client and only then marks the messages completed
 

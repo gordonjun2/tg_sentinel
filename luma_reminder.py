@@ -10,15 +10,11 @@ import sys
 from datetime import datetime
 from typing import Optional
 
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from pyrogram import Client, raw, utils
 
 from config import (
     BOT_TOKEN,
-    GEMINI_API_KEY,
-    GEMINI_ENRICHMENT_MODEL,
     OPENAI_API_KEY,
     OPENAI_ENRICHMENT_MODEL,
     TARGET_GROUP_ID,
@@ -53,7 +49,6 @@ def get_peer_type(peer_id: int) -> str:
 
 utils.get_peer_type = get_peer_type
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 REMINDER_SYSTEM_PROMPT = """\
@@ -87,17 +82,6 @@ def generate_reminder_message(event_dt: datetime, event_name: str, event_desc: s
         f"Write a fun reminder message for this event."
     )
 
-    def _via_gemini() -> str:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_ENRICHMENT_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=REMINDER_SYSTEM_PROMPT,
-                temperature=0.7,
-            ),
-            contents=user_prompt,
-        )
-        return response.text.strip() or ""
-
     def _via_openai() -> str:
         if openai_client is None:
             raise RuntimeError("OpenAI client not configured")
@@ -112,7 +96,6 @@ def generate_reminder_message(event_dt: datetime, event_name: str, event_desc: s
         outcome = run_llm_chain(
             "luma_reminder",
             [
-                ("gemini", GEMINI_ENRICHMENT_MODEL, _via_gemini),
                 ("openai", OPENAI_ENRICHMENT_MODEL, _via_openai),
             ],
         )
