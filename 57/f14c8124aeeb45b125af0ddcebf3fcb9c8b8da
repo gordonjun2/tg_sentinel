@@ -1,0 +1,50 @@
+luma_discovery.py
+  s_25f8171a6c3bc7::t_8e480183125ccb 20
+.env.example
+  s_25f8171a6c3bc7::t_c0b6ef98dabe50 42
+audio_transcribe.py
+  s_25f8171a6c3bc7::t_8e480183125ccb 8
+llm_chain.py
+  s_25f8171a6c3bc7::t_8e480183125ccb 33
+test_enrichment.py
+  s_25f8171a6c3bc7::t_e094f623833d7e 152-153,162-163,178-179,188,191-192,199,202-203
+partner_message_summarisation/summarizer.py
+  s_25f8171a6c3bc7::t_8e480183125ccb 300,332
+  s_25f8171a6c3bc7::t_b68ec5baa5d88c 3-4,265,303,320
+gmail_calendar/README.md
+  s_25f8171a6c3bc7::t_f797582715da6a 82
+partner_message_summarisation/README.md
+  s_25f8171a6c3bc7::t_c73f0d109c6d07 51
+partner_message_summarisation/tests/test_db.py
+  s_25f8171a6c3bc7::t_308dc07b0feb73 112
+partner_message_summarisation/__init__.py
+  s_25f8171a6c3bc7::t_f797582715da6a 8
+test_admin_alert.py
+  s_25f8171a6c3bc7::t_f797582715da6a 34-35,42-43,63-64,77-78,83,88-89,95-96,100,102-103,109,124,131
+test_enrichment_live.py
+  s_25f8171a6c3bc7::t_f797582715da6a 68,110
+gmail_calendar/__init__.py
+  s_25f8171a6c3bc7::t_f797582715da6a 5
+gmail_calendar/llm.py
+  s_25f8171a6c3bc7::t_8e480183125ccb 1,3,106
+test_llm_chain.py
+  s_25f8171a6c3bc7::t_f797582715da6a 32,37,42,47,62,80,84,110,112,121,137,143,150,166,168-169,182,187,191,199,204,218,225-226,239,255
+README.md
+  s_25f8171a6c3bc7::t_f797582715da6a 13,24,42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57f14c8124aeeb45b125af0ddcebf3fcb9c8b8da",
+  "prompts": {},
+  "sessions": {
+    "s_25f8171a6c3bc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d9ebbd5f-9b3f-4f49-bdc6-5dcbe9ac4c9a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Gordon Oh <gordonoh@yahoo.com.sg>"
+    }
+  }
+}
