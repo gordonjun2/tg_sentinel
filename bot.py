@@ -2312,7 +2312,7 @@ def main() -> None:
 
     application.add_handler(
         MessageHandler(
-            filters.Chat(chat_id=TARGET_GROUP_ID)
+            filters.Chat(chat_id=list(TARGET_GROUP_IDS))
             & filters.StatusUpdate.NEW_CHAT_MEMBERS,
             announce_new_member,
         )
