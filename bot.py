@@ -48,7 +48,7 @@ from upload_to_google_drive import GoogleDriveUploader
 from audio_transcribe import AudioTranscriber
 import os
 import time
-from pyrogram import Client
+from pyrogram import Client, utils
 from user_sweep import user_sweep_loop
 from ai_enrichment import process_enrichment, buffer, admin_buffer
 from rich_messages import (
@@ -191,7 +191,18 @@ def apply_ineligible_status_markdown(state: UserState) -> str:
     )
 
 
-# [Pyrogram] get_peer_type monkey patch is applied by user_sweep on import.
+# [Pyrogram] Monkey Patch
+def get_peer_type(peer_id: int) -> str:
+    peer_id_str = str(peer_id)
+    if not peer_id_str.startswith("-"):
+        return "user"
+    elif peer_id_str.startswith("-100"):
+        return "channel"
+    else:
+        return "chat"
+
+
+utils.get_peer_type = get_peer_type
 
 
 async def revoke_and_create_invite_link(
