@@ -1,17 +1,36 @@
 import asyncio
+import os
+import uuid
 from types import SimpleNamespace
 
+import psycopg
 import pytest
+from psycopg import sql
 
+import config  # noqa: F401  (loads .env so SUPABASE_DB_URL is visible)
 import user_sweep
-from database import Database
+from user_store import UserStore
 
 G = -1001
 
 
 @pytest.fixture
-def database(tmp_path):
-    return Database(str(tmp_path / "t.db"))
+def database():
+    """UserStore on a throwaway schema in the Supabase/Postgres DB, dropped
+    afterwards. Skipped when no database is reachable."""
+    dsn = os.getenv("USER_STORE_TEST_DSN") or os.getenv("SUPABASE_DB_URL")
+    if not dsn:
+        pytest.skip("no SUPABASE_DB_URL / USER_STORE_TEST_DSN")
+    schema = f"tg_sentinel_test_{uuid.uuid4().hex[:8]}"
+    store = UserStore(dsn, schema)
+    try:
+        store.count_group_members(0)  # connects + creates the schema
+    except psycopg.OperationalError as e:
+        pytest.skip(f"database unreachable: {e}")
+    yield store
+    store.close()
+    with psycopg.connect(dsn, autocommit=True) as c:
+        c.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
 
 def member(uid, username=None, first="F", bot=False, deleted=False, status="member"):
@@ -118,3 +137,32 @@ def test_welcome_names_formatting():
         SimpleNamespace(id=2, username=None, full_name="Bob [x]"),
     ]
     assert user_sweep.build_welcome_names(people) == "@a\\_b and [Bob \\[x]](tg://user?id=2)"
+
+
+def test_user_roundtrip(database):
+    from user_models import UserState
+
+    u = database.create_user(9_000_000_001, "alice")
+    assert database.get_user(9_000_000_001).state is UserState.IDLE
+    u.state = UserState.PENDING_APPROVAL
+    u.answers = {"0": "Alice", "1": "ACME"}
+    u.invite_links = ["https://t.me/+x"]
+    u.approval_group = "sub"
+    database.update_user(u)
+    got = database.get_user(9_000_000_001)
+    assert got.answers == {"0": "Alice", "1": "ACME"}
+    assert got.invite_links == ["https://t.me/+x"]
+    assert got.approval_group == "sub"
+    assert [x.user_id for x in database.get_pending_requests()] == [9_000_000_001]
+    assert database.delete_pending_approval_users() == 1
+    assert database.get_user(9_000_000_001) is None
+
+
+def test_rls_enabled(database):
+    with database._lock:
+        rows = database._conn.execute(
+            "SELECT relname, relrowsecurity FROM pg_class "
+            "WHERE relnamespace = current_schema()::regnamespace "
+            "AND relname IN ('users', 'group_members')"
+        ).fetchall()
+    assert len(rows) == 2 and all(r["relrowsecurity"] for r in rows)

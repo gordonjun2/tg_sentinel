@@ -138,7 +138,7 @@ def record_members(database, group_id: int, members: list, silent: bool) -> int:
 async def send_welcomes(bot, database, group_id: int) -> int:
     """Welcome every unwelcomed member of a group in one message. Members are
     only marked welcomed once the message was actually sent."""
-    pending = database.get_unwelcomed_members(group_id)
+    pending = await asyncio.to_thread(database.get_unwelcomed_members, group_id)
     if not pending:
         return 0
 
@@ -162,14 +162,16 @@ async def send_welcomes(bot, database, group_id: int) -> int:
     except Exception as e:
         logger.error(f"Failed to send welcome to {group_id}: {e}")
         return 0
-    database.mark_members_welcomed(group_id, [r["user_id"] for r in pending])
+    await asyncio.to_thread(
+        database.mark_members_welcomed, group_id, [r["user_id"] for r in pending]
+    )
     return len(pending)
 
 
 async def sweep_once(
     get_client: Callable[[], Awaitable[Client]],
     bot,
-    database=default_db,
+    database=default_db.users,
     silent: bool = False,
 ) -> None:
     """One pass over every target group: sync members, then welcome."""
@@ -182,11 +184,15 @@ async def sweep_once(
     for group_id in TARGET_GROUP_IDS:
         # A group we've never recorded is a backfill: record without welcoming
         # hundreds of existing members.
-        group_silent = silent or database.count_group_members(group_id) == 0
+        group_silent = silent or (
+            await asyncio.to_thread(database.count_group_members, group_id) == 0
+        )
         if client is not None:
             try:
                 members = await enumerate_group_members(client, group_id)
-                new = record_members(database, group_id, members, group_silent)
+                new = await asyncio.to_thread(
+                    record_members, database, group_id, members, group_silent
+                )
                 logger.info(
                     f"User sweep {group_id}: {len(members)} members, {new} new"
                     + (" (silent)" if group_silent else "")

@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import json
 from typing import Dict, List, Optional
@@ -6,15 +7,8 @@ from enum import Enum
 from pathlib import Path
 from datetime import datetime, timezone
 from config import AI_ENRICHMENT_ENABLED_DEFAULT
-
-
-class UserState(Enum):
-    IDLE = "idle"
-    IN_SURVEY = "in_survey"
-    PENDING_APPROVAL = "pending_approval"
-    PENDING_REJECTION = "pending_rejection"
-    APPROVED = "approved"
-    REJECTED = "rejected"
+from user_models import UserData, UserState  # noqa: F401 (re-exported)
+from user_store import UserStore
 
 
 @dataclass
@@ -28,82 +22,18 @@ class TranscriptionStatus:
     error: Optional[str] = None
 
 
-@dataclass
-class UserData:
-    user_id: int
-    username: Optional[str]
-    state: UserState
-    current_question: int
-    answers: Dict[str, str]
-    join_datetime: datetime
-    invite_links: List[str] = None  # List of invite link IDs given to this user
-    approval_group: Optional[str] = (
-        None  # Which group the approval was for: "main" or "sub"
-    )
-    rejection_message_id: Optional[int] = (
-        None  # Message ID for rejection reason request
-    )
-
-
 class Database:
-    def __init__(self, db_path: str = "bot_data.db"):
+    def __init__(self, db_path: str = "bot_data.db", user_store: Optional[UserStore] = None):
         self.db_path = db_path
+        self.users = user_store or UserStore(
+            os.getenv("SUPABASE_DB_URL"), os.getenv("DB_SCHEMA", "tg_sentinel")
+        )
         self._init_db()
 
     def _init_db(self) -> None:
         """Initialize the database and create tables if they don't exist."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-
-            # Create users table if not exists
-            cursor.execute("""
-                SELECT name FROM sqlite_master WHERE type='table' AND name='users'
-            """)
-            table_exists = cursor.fetchone() is not None
-
-            if not table_exists:
-                # Create users table
-                cursor.execute("""
-                    CREATE TABLE users (
-                        user_id INTEGER PRIMARY KEY,
-                        username TEXT,
-                        state TEXT,
-                        current_question INTEGER,
-                        answers TEXT,
-                        join_datetime TEXT,
-                        invite_links TEXT,
-                        approval_group TEXT,
-                        rejection_message_id INTEGER
-                    )
-                """)
-            else:
-                # Check and add columns as before
-                cursor.execute("PRAGMA table_info(users)")
-                columns = [col[1] for col in cursor.fetchall()]
-                if "join_datetime" not in columns:
-                    cursor.execute("""
-                        ALTER TABLE users 
-                        ADD COLUMN join_datetime TEXT 
-                        DEFAULT CURRENT_TIMESTAMP
-                    """)
-                if "invite_links" not in columns:
-                    cursor.execute("""
-                        ALTER TABLE users 
-                        ADD COLUMN invite_links TEXT 
-                        DEFAULT '[]'
-                    """)
-                if "approval_group" not in columns:
-                    cursor.execute("""
-                        ALTER TABLE users 
-                        ADD COLUMN approval_group TEXT 
-                        DEFAULT NULL
-                    """)
-                if "rejection_message_id" not in columns:
-                    cursor.execute("""
-                        ALTER TABLE users 
-                        ADD COLUMN rejection_message_id INTEGER 
-                        DEFAULT NULL
-                    """)
 
             # Create transcription_status table if not exists
             cursor.execute("""
@@ -214,162 +144,30 @@ class Database:
                     )
                 """)
 
-            # One row per (user, Telegram group). Kept separate from `users`
-            # (survey/approval state, one row per user) because a person can
-            # be in both target groups, and members added directly or via an
-            # invite link never go through the survey.
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS group_members (
-                    user_id INTEGER NOT NULL,
-                    telegram_group_id INTEGER NOT NULL,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    is_bot INTEGER NOT NULL DEFAULT 0,
-                    status TEXT NOT NULL DEFAULT 'member',
-                    first_seen_at TEXT NOT NULL,
-                    last_seen_at TEXT NOT NULL,
-                    left_at TEXT,
-                    welcomed INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (user_id, telegram_group_id)
-                )
-            """)
-
             conn.commit()
 
-    def _user_data_from_row(self, row: tuple) -> UserData:
-        """Convert a database row to UserData object."""
-        (
-            user_id,
-            username,
-            state,
-            current_question,
-            answers,
-            join_datetime,
-            invite_links,
-            approval_group,
-            rejection_message_id,
-        ) = row
-        return UserData(
-            user_id=user_id,
-            username=username,
-            state=UserState(state),
-            current_question=current_question,
-            answers=json.loads(answers) if answers else {},
-            join_datetime=datetime.fromisoformat(join_datetime)
-            if join_datetime
-            else datetime.now(timezone.utc),
-            invite_links=json.loads(invite_links) if invite_links else [],
-            approval_group=approval_group,
-            rejection_message_id=rejection_message_id,
-        )
+    # ------------------------------------------------------------------
+    # User data (survey/approval state + group membership) lives in Supabase;
+    # see user_store.py. Delegated so call sites keep using `db.<method>`.
+    # ------------------------------------------------------------------
 
     def get_user(self, user_id: int) -> Optional[UserData]:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id FROM users WHERE user_id = ?",
-                (user_id,),
-            )
-            row = cursor.fetchone()
-            return self._user_data_from_row(row) if row else None
+        return self.users.get_user(user_id)
 
     def create_user(self, user_id: int, username: Optional[str]) -> UserData:
-        user = UserData(
-            user_id=user_id,
-            username=username,
-            state=UserState.IDLE,
-            current_question=0,
-            answers={},
-            join_datetime=datetime.now(timezone.utc),
-            invite_links=[],
-            rejection_message_id=None,
-        )
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO users (user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    user.user_id,
-                    user.username,
-                    user.state.value,
-                    user.current_question,
-                    json.dumps(user.answers),
-                    user.join_datetime.isoformat(),
-                    json.dumps(user.invite_links),
-                    user.approval_group,
-                    user.rejection_message_id,
-                ),
-            )
-            conn.commit()
-        return user
+        return self.users.create_user(user_id, username)
 
     def update_user(self, user_data: UserData) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE users
-                SET username = ?, state = ?, current_question = ?, answers = ?, join_datetime = ?, invite_links = ?, approval_group = ?, rejection_message_id = ?
-                WHERE user_id = ?
-                """,
-                (
-                    user_data.username,
-                    user_data.state.value,
-                    user_data.current_question,
-                    json.dumps(user_data.answers),
-                    user_data.join_datetime.isoformat(),
-                    json.dumps(user_data.invite_links),
-                    user_data.approval_group,
-                    user_data.rejection_message_id,
-                    user_data.user_id,
-                ),
-            )
-            conn.commit()
+        self.users.update_user(user_data)
 
     def get_pending_requests(self) -> List[UserData]:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id
-                FROM users
-                WHERE state = ?
-                """,
-                (UserState.PENDING_APPROVAL.value,),
-            )
-            return [self._user_data_from_row(row) for row in cursor.fetchall()]
+        return self.users.get_pending_requests()
 
     def get_all_users(self) -> List[UserData]:
-        """Retrieve all users from the database."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT user_id, username, state, current_question, answers, join_datetime, invite_links, approval_group, rejection_message_id FROM users"
-            )
-            return [self._user_data_from_row(row) for row in cursor.fetchall()]
+        return self.users.get_all_users()
 
     def delete_pending_approval_users(self) -> int:
-        """Delete all users with PENDING_APPROVAL state.
-
-        Returns:
-            int: Number of records deleted
-        """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                    DELETE FROM users
-                    WHERE state = ?
-                    """,
-                (UserState.PENDING_APPROVAL.value,),
-            )
-            deleted_count = cursor.rowcount
-            conn.commit()
-            return deleted_count
+        return self.users.delete_pending_approval_users()
 
     def get_active_transcription(self) -> Optional[TranscriptionStatus]:
         """Get the currently active transcription if any."""
@@ -635,120 +433,6 @@ class Database:
                 (limit,),
             )
             return cursor.fetchall()
-
-    # ------------------------------------------------------------------
-    # group_members (user sweep)
-    # ------------------------------------------------------------------
-
-    def count_group_members(self, group_id: int) -> int:
-        """Rows (any status) recorded for a group; 0 means never swept."""
-        with sqlite3.connect(self.db_path) as conn:
-            return conn.execute(
-                "SELECT COUNT(*) FROM group_members WHERE telegram_group_id = ?",
-                (group_id,),
-            ).fetchone()[0]
-
-    def upsert_group_member(
-        self,
-        group_id: int,
-        user_id: int,
-        username: Optional[str],
-        first_name: Optional[str],
-        last_name: Optional[str],
-        is_bot: bool = False,
-        status: str = "member",
-        welcomed: bool = False,
-    ) -> bool:
-        """Insert or refresh a group member. Returns True when the user is
-        new to the group or is rejoining after having left (so a welcome is
-        due); `welcomed` only applies in those cases."""
-        now = datetime.now(timezone.utc).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT left_at FROM group_members WHERE user_id = ? AND telegram_group_id = ?",
-                (user_id, group_id),
-            ).fetchone()
-            if row is None:
-                conn.execute(
-                    """
-                    INSERT INTO group_members
-                        (user_id, telegram_group_id, username, first_name, last_name,
-                         is_bot, status, first_seen_at, last_seen_at, welcomed)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (user_id, group_id, username, first_name, last_name,
-                     int(is_bot), status, now, now, int(welcomed)),
-                )
-                conn.commit()
-                return True
-
-            rejoined = row[0] is not None
-            conn.execute(
-                """
-                UPDATE group_members
-                SET username = ?, first_name = ?, last_name = ?, is_bot = ?,
-                    status = ?, last_seen_at = ?, left_at = NULL,
-                    welcomed = CASE WHEN ? THEN ? ELSE welcomed END
-                WHERE user_id = ? AND telegram_group_id = ?
-                """,
-                (username, first_name, last_name, int(is_bot), status, now,
-                 int(rejoined), int(welcomed), user_id, group_id),
-            )
-            conn.commit()
-            return rejoined
-
-    def mark_group_member_left(self, group_id: int, user_id: int, status: str = "left") -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                UPDATE group_members SET status = ?, left_at = ?
-                WHERE user_id = ? AND telegram_group_id = ? AND left_at IS NULL
-                """,
-                (status, now, user_id, group_id),
-            )
-            conn.commit()
-
-    def mark_absent_members_left(self, group_id: int, present_ids: set) -> int:
-        """Mark active rows whose user is no longer in `present_ids` as left."""
-        with sqlite3.connect(self.db_path) as conn:
-            active = [
-                r[0]
-                for r in conn.execute(
-                    "SELECT user_id FROM group_members WHERE telegram_group_id = ? AND left_at IS NULL",
-                    (group_id,),
-                )
-            ]
-        gone = [uid for uid in active if uid not in present_ids]
-        for uid in gone:
-            self.mark_group_member_left(group_id, uid)
-        return len(gone)
-
-    def get_unwelcomed_members(self, group_id: int) -> List[dict]:
-        """Active, non-bot members of a group who haven't been welcomed yet."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT user_id, username, first_name, last_name
-                FROM group_members
-                WHERE telegram_group_id = ? AND welcomed = 0
-                  AND is_bot = 0 AND left_at IS NULL
-                ORDER BY first_seen_at
-                """,
-                (group_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
-    def mark_members_welcomed(self, group_id: int, user_ids: List[int]) -> None:
-        if not user_ids:
-            return
-        with sqlite3.connect(self.db_path) as conn:
-            conn.executemany(
-                "UPDATE group_members SET welcomed = 1 WHERE user_id = ? AND telegram_group_id = ?",
-                [(uid, group_id) for uid in user_ids],
-            )
-            conn.commit()
 
 
 # Ensure the data directory exists

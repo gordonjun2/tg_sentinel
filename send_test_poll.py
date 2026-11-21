@@ -3,7 +3,7 @@ from telegram import Bot, Poll
 from config import BOT_TOKEN, TARGET_GROUP_ID
 
 
-async def test_bot():
+async def send_test_poll():
     """Test function to send a message and poll to admin group."""
     try:
         # Initialize bot
@@ -42,5 +42,5 @@ async def test_bot():
 
 
 if __name__ == "__main__":
-    # Run the test function
-    asyncio.run(test_bot())
+    # Manual script: sends a real poll to TARGET_GROUP_ID (not a pytest test)
+    asyncio.run(send_test_poll())

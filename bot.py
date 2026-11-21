@@ -239,10 +239,11 @@ async def revoke_and_create_invite_link(
 
 TARGET_GROUP_IDS = (TARGET_GROUP_ID, TARGET_SUB_GROUP_ID)
 
-def _record_group_member(user, chat_id: int) -> None:
+async def _record_group_member(user, chat_id: int) -> None:
     """Realtime join: insert the member now (unwelcomed). The user sweep sends
     the welcome and also catches anyone these events miss."""
-    db.upsert_group_member(
+    await asyncio.to_thread(
+        db.users.upsert_group_member,
         chat_id,
         user.id,
         user.username,
@@ -263,7 +264,7 @@ async def announce_new_member(
     bot_id = context.bot.id
     for member in update.message.new_chat_members:
         if member.id != bot_id:
-            _record_group_member(member, update.effective_chat.id)
+            await _record_group_member(member, update.effective_chat.id)
 
 
 async def handle_chat_member_update(
@@ -283,14 +284,17 @@ async def handle_chat_member_update(
     joining_statuses = {"member", "administrator", "owner"}
     if new_status not in joining_statuses:
         if old_status in joining_statuses:
-            db.mark_group_member_left(
-                update.effective_chat.id, user.id, status=new_status
+            await asyncio.to_thread(
+                db.users.mark_group_member_left,
+                update.effective_chat.id,
+                user.id,
+                status=new_status,
             )
         return
     if old_status in joining_statuses:
         return
 
-    _record_group_member(user, update.effective_chat.id)
+    await _record_group_member(user, update.effective_chat.id)
 
 
 PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")
