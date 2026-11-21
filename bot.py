@@ -31,8 +31,6 @@ from config import (
     TARGET_GROUP_ID,
     TARGET_SUB_GROUP_ID,
     SURVEY_QUESTIONS,
-    WELCOME_MESSAGES,
-    WELCOME_BATCH_INTERVAL_MINUTES,
     GOOGLE_DRIVE_MAIN_FOLDER_ID,
     GOOGLE_DRIVE_TRANSCRIPTIONS_FOLDER_ID,
     GOOGLE_DRIVE_DISCUSSION_INSIGHTS_FOLDER_ID,
@@ -50,7 +48,8 @@ from upload_to_google_drive import GoogleDriveUploader
 from audio_transcribe import AudioTranscriber
 import os
 import time
-from pyrogram import Client, utils
+from pyrogram import Client
+from user_sweep import user_sweep_loop
 from ai_enrichment import process_enrichment, buffer, admin_buffer
 from rich_messages import (
     STREAM_CHUNK_DELAY_SECONDS,
@@ -192,18 +191,7 @@ def apply_ineligible_status_markdown(state: UserState) -> str:
     )
 
 
-# [Pyrogram] Monkey Patch
-def get_peer_type(peer_id: int) -> str:
-    peer_id_str = str(peer_id)
-    if not peer_id_str.startswith("-"):
-        return "user"
-    elif peer_id_str.startswith("-100"):
-        return "channel"
-    else:
-        return "chat"
-
-
-utils.get_peer_type = get_peer_type
+# [Pyrogram] get_peer_type monkey patch is applied by user_sweep on import.
 
 
 async def revoke_and_create_invite_link(
@@ -240,17 +228,17 @@ async def revoke_and_create_invite_link(
 
 TARGET_GROUP_IDS = (TARGET_GROUP_ID, TARGET_SUB_GROUP_ID)
 
-_pending_members: dict = {}
-_PENDING_MEMBERS_MAX = 500
-
-
-def _add_pending_member(user, chat_id: int) -> None:
-    """Append a pending member for a group, keeping each list bounded so it
-    can never grow without limit if the join command is not run for a while."""
-    bucket = _pending_members.setdefault(chat_id, [])
-    bucket.append(user)
-    if len(bucket) > _PENDING_MEMBERS_MAX:
-        del bucket[: len(bucket) - _PENDING_MEMBERS_MAX]
+def _record_group_member(user, chat_id: int) -> None:
+    """Realtime join: insert the member now (unwelcomed). The user sweep sends
+    the welcome and also catches anyone these events miss."""
+    db.upsert_group_member(
+        chat_id,
+        user.id,
+        user.username,
+        user.first_name,
+        user.last_name,
+        is_bot=user.is_bot,
+    )
 
 
 async def announce_new_member(
@@ -262,12 +250,9 @@ async def announce_new_member(
         return
 
     bot_id = context.bot.id
-    members = [u for u in update.message.new_chat_members if u.id != bot_id]
-    if not members:
-        return
-
-    for member in members:
-        _add_pending_member(member, update.effective_chat.id)
+    for member in update.message.new_chat_members:
+        if member.id != bot_id:
+            _record_group_member(member, update.effective_chat.id)
 
 
 async def handle_chat_member_update(
@@ -280,18 +265,21 @@ async def handle_chat_member_update(
 
     new_status = update.chat_member.new_chat_member.status
     old_status = update.chat_member.old_chat_member.status
-
-    joining_statuses = {"member", "administrator", "owner"}
-    if new_status not in joining_statuses:
-        return
-    if old_status in joining_statuses:
-        return
-
     user = update.chat_member.new_chat_member.user
     if user.id == context.bot.id:
         return
 
-    _add_pending_member(user, update.effective_chat.id)
+    joining_statuses = {"member", "administrator", "owner"}
+    if new_status not in joining_statuses:
+        if old_status in joining_statuses:
+            db.mark_group_member_left(
+                update.effective_chat.id, user.id, status=new_status
+            )
+        return
+    if old_status in joining_statuses:
+        return
+
+    _record_group_member(user, update.effective_chat.id)
 
 
 PINNED_IDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pinned_ids.json")
@@ -324,74 +312,6 @@ async def handle_pinned_message(update: Update, context: ContextTypes.DEFAULT_TY
     ids.insert(0, pinned_id)
     _write_pinned_ids(ids)
     logger.info(f"Tracked pinned message: {pinned_id}")
-
-
-def _build_welcome_names(members: list) -> str:
-    seen = set()
-    mentions = []
-    for u in members:
-        key = u.username or u.id
-        if key in seen:
-            continue
-        seen.add(key)
-
-        if u.username:
-            escaped = (
-                u.username.replace("_", "\\_")
-                .replace("*", "\\*")
-                .replace("[", "\\[")
-                .replace("`", "\\`")
-            )
-            mentions.append(f"@{escaped}")
-        else:
-            escaped = (
-                u.full_name.replace("_", "\\_")
-                .replace("*", "\\*")
-                .replace("[", "\\[")
-                .replace("`", "\\`")
-            )
-            mentions.append(f"[{escaped}](tg://user?id={u.id})")
-
-    if not mentions:
-        return ""
-    if len(mentions) == 1:
-        return mentions[0]
-    if len(mentions) == 2:
-        return f"{mentions[0]} and {mentions[1]}"
-    return ", ".join(mentions[:-1]) + f", and {mentions[-1]}"
-
-
-async def _batch_announce_loop(bot) -> None:
-    interval = WELCOME_BATCH_INTERVAL_MINUTES
-    try:
-        while True:
-            now = datetime.now(timezone.utc)
-            minutes = now.minute % interval
-            seconds = now.second
-            wait = (interval - 1 - minutes) * 60 + (60 - seconds)
-            await asyncio.sleep(wait)
-
-            if not _pending_members:
-                continue
-
-            for chat_id, members in list(_pending_members.items()):
-                if not members:
-                    continue
-                _pending_members[chat_id] = []
-
-                names = _build_welcome_names(members)
-                if not names:
-                    continue
-
-                text = random.choice(WELCOME_MESSAGES).format(names=names)
-                try:
-                    await bot.send_message(
-                        chat_id=chat_id, text=text, parse_mode=ParseMode.MARKDOWN
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send batch announcement to {chat_id}: {e}")
-    except asyncio.CancelledError:
-        pass
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2178,7 +2098,9 @@ def main() -> None:
             scope=BotCommandScopeAllPrivateChats(),  # Only show in private chats
         )
 
-        app.create_task(_batch_announce_loop(app.bot))
+        app.create_task(
+            user_sweep_loop(_get_downloader_client, app.bot)
+        )
         app.create_task(_rss_monitor_loop())
         # Warm animation file_ids so /start and /serendip reuse Telegram CDN
         # instead of re-uploading (buttons + GIF arrive in one fast send).

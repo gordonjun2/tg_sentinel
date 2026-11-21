@@ -214,6 +214,27 @@ class Database:
                     )
                 """)
 
+            # One row per (user, Telegram group). Kept separate from `users`
+            # (survey/approval state, one row per user) because a person can
+            # be in both target groups, and members added directly or via an
+            # invite link never go through the survey.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS group_members (
+                    user_id INTEGER NOT NULL,
+                    telegram_group_id INTEGER NOT NULL,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    is_bot INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'member',
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    left_at TEXT,
+                    welcomed INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (user_id, telegram_group_id)
+                )
+            """)
+
             conn.commit()
 
     def _user_data_from_row(self, row: tuple) -> UserData:
@@ -614,6 +635,120 @@ class Database:
                 (limit,),
             )
             return cursor.fetchall()
+
+    # ------------------------------------------------------------------
+    # group_members (user sweep)
+    # ------------------------------------------------------------------
+
+    def count_group_members(self, group_id: int) -> int:
+        """Rows (any status) recorded for a group; 0 means never swept."""
+        with sqlite3.connect(self.db_path) as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM group_members WHERE telegram_group_id = ?",
+                (group_id,),
+            ).fetchone()[0]
+
+    def upsert_group_member(
+        self,
+        group_id: int,
+        user_id: int,
+        username: Optional[str],
+        first_name: Optional[str],
+        last_name: Optional[str],
+        is_bot: bool = False,
+        status: str = "member",
+        welcomed: bool = False,
+    ) -> bool:
+        """Insert or refresh a group member. Returns True when the user is
+        new to the group or is rejoining after having left (so a welcome is
+        due); `welcomed` only applies in those cases."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT left_at FROM group_members WHERE user_id = ? AND telegram_group_id = ?",
+                (user_id, group_id),
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO group_members
+                        (user_id, telegram_group_id, username, first_name, last_name,
+                         is_bot, status, first_seen_at, last_seen_at, welcomed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (user_id, group_id, username, first_name, last_name,
+                     int(is_bot), status, now, now, int(welcomed)),
+                )
+                conn.commit()
+                return True
+
+            rejoined = row[0] is not None
+            conn.execute(
+                """
+                UPDATE group_members
+                SET username = ?, first_name = ?, last_name = ?, is_bot = ?,
+                    status = ?, last_seen_at = ?, left_at = NULL,
+                    welcomed = CASE WHEN ? THEN ? ELSE welcomed END
+                WHERE user_id = ? AND telegram_group_id = ?
+                """,
+                (username, first_name, last_name, int(is_bot), status, now,
+                 int(rejoined), int(welcomed), user_id, group_id),
+            )
+            conn.commit()
+            return rejoined
+
+    def mark_group_member_left(self, group_id: int, user_id: int, status: str = "left") -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE group_members SET status = ?, left_at = ?
+                WHERE user_id = ? AND telegram_group_id = ? AND left_at IS NULL
+                """,
+                (status, now, user_id, group_id),
+            )
+            conn.commit()
+
+    def mark_absent_members_left(self, group_id: int, present_ids: set) -> int:
+        """Mark active rows whose user is no longer in `present_ids` as left."""
+        with sqlite3.connect(self.db_path) as conn:
+            active = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT user_id FROM group_members WHERE telegram_group_id = ? AND left_at IS NULL",
+                    (group_id,),
+                )
+            ]
+        gone = [uid for uid in active if uid not in present_ids]
+        for uid in gone:
+            self.mark_group_member_left(group_id, uid)
+        return len(gone)
+
+    def get_unwelcomed_members(self, group_id: int) -> List[dict]:
+        """Active, non-bot members of a group who haven't been welcomed yet."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT user_id, username, first_name, last_name
+                FROM group_members
+                WHERE telegram_group_id = ? AND welcomed = 0
+                  AND is_bot = 0 AND left_at IS NULL
+                ORDER BY first_seen_at
+                """,
+                (group_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def mark_members_welcomed(self, group_id: int, user_ids: List[int]) -> None:
+        if not user_ids:
+            return
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executemany(
+                "UPDATE group_members SET welcomed = 1 WHERE user_id = ? AND telegram_group_id = ?",
+                [(uid, group_id) for uid in user_ids],
+            )
+            conn.commit()
 
 
 # Ensure the data directory exists

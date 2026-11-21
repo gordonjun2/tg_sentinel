@@ -106,7 +106,9 @@ SURVEY_QUESTIONS = [
     "Who is your referral?",
 ]
 
-WELCOME_BATCH_INTERVAL_MINUTES = 5
+# How often the new-user sweep syncs group members into the DB and welcomes
+# anyone new (replaces the old welcome-only batching).
+USER_SWEEP_INTERVAL_MINUTES = 5
 
 WELCOME_MESSAGES = [
     "🚀 Welcome to SISC, {names}!\n\nWe're glad to have you here. Drop a quick intro — tell us your name, what you do, and one AI tool you're loving right now!",
